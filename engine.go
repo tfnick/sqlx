@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"regexp"
 
-	"github.com/jmoiron/sqlx/reflectx"
+	"github.com/tfnick/sqlx/reflectx"
 )
 
 // Engine wraps sqlx.DB and provides dynamic SQL capabilities.

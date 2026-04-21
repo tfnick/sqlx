@@ -39,7 +39,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/jmoiron/sqlx"
+    "github.com/tfnick/sqlx"
 )
 
 type User struct {
@@ -77,7 +77,7 @@ func main() {
 
 ```go
 import (
-    "github.com/jmoiron/sqlx"
+    "github.com/tfnick/sqlx"
 )
 
 // 方式1：从已有 sqlx.DB 创建
@@ -893,7 +893,7 @@ import (
     "log"
     "time"
 
-    "github.com/jmoiron/sqlx"
+    "github.com/tfnick/sqlx"
 )
 
 // 模型定义
