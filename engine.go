@@ -12,7 +12,7 @@ import (
 // Engine wraps sqlx.DB and provides dynamic SQL capabilities.
 // It supports conditional SQL blocks using #[ ] syntax, similar to sqltoy.
 //
-// Example:
+// Example with parameters:
 //
 //	sql := `
 //	SELECT id, name, age
@@ -31,6 +31,12 @@ import (
 //
 //	var users []User
 //	err := engine.Select(ctx, &users, sql, params)
+//
+// Example without parameters:
+//
+//	sql := `SELECT * FROM users ORDER BY created_at DESC`
+//	var users []User
+//	err := engine.Select(ctx, &users, sql)
 type Engine struct {
 	db *DB
 }
@@ -50,9 +56,14 @@ func (e *Engine) DB() *DB {
 // corresponding named parameter is nil, empty, or not present.
 //
 // dest must be a pointer to a slice.
-func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg interface{}) error {
-	query = Preprocess(query, arg)
-	q, args, err := Named(query, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg ...interface{}) error {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query = Preprocess(query, a)
+	q, args, err := Named(query, a)
 	if err != nil {
 		return err
 	}
@@ -70,9 +81,14 @@ func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg
 //
 // dest must be a pointer to a struct or scannable type.
 // Returns sql.ErrNoRows if no result is found.
-func (e *Engine) Get(ctx context.Context, dest interface{}, query string, arg interface{}) error {
-	query = Preprocess(query, arg)
-	q, args, err := Named(query, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (e *Engine) Get(ctx context.Context, dest interface{}, query string, arg ...interface{}) error {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query = Preprocess(query, a)
+	q, args, err := Named(query, a)
 	if err != nil {
 		return err
 	}
@@ -87,9 +103,14 @@ func (e *Engine) Get(ctx context.Context, dest interface{}, query string, arg in
 // Exec executes a query with dynamic SQL support.
 // The query supports #[ ] conditional blocks that are removed when the
 // corresponding named parameter is nil, empty, or not present.
-func (e *Engine) Exec(ctx context.Context, query string, arg interface{}) (sql.Result, error) {
-	query = Preprocess(query, arg)
-	q, args, err := Named(query, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (e *Engine) Exec(ctx context.Context, query string, arg ...interface{}) (sql.Result, error) {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query = Preprocess(query, a)
+	q, args, err := Named(query, a)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +124,14 @@ func (e *Engine) Exec(ctx context.Context, query string, arg interface{}) (sql.R
 
 // Queryx executes a query with dynamic SQL support and returns *sqlx.Rows.
 // The query supports #[ ] conditional blocks.
-func (e *Engine) Queryx(ctx context.Context, query string, arg interface{}) (*Rows, error) {
-	query = Preprocess(query, arg)
-	q, args, err := Named(query, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (e *Engine) Queryx(ctx context.Context, query string, arg ...interface{}) (*Rows, error) {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query = Preprocess(query, a)
+	q, args, err := Named(query, a)
 	if err != nil {
 		return nil, err
 	}
@@ -119,9 +145,14 @@ func (e *Engine) Queryx(ctx context.Context, query string, arg interface{}) (*Ro
 
 // QueryRowx executes a query with dynamic SQL support and returns *sqlx.Row.
 // The query supports #[ ] conditional blocks.
-func (e *Engine) QueryRowx(ctx context.Context, query string, arg interface{}) *Row {
-	query = Preprocess(query, arg)
-	q, args, err := Named(query, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (e *Engine) QueryRowx(ctx context.Context, query string, arg ...interface{}) *Row {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query = Preprocess(query, a)
+	q, args, err := Named(query, a)
 	if err != nil {
 		return &Row{err: err}
 	}
@@ -158,10 +189,15 @@ func (e *Engine) PrepareNamed(query string) (*DynNamedStmt, error) {
 }
 
 // Select executes the prepared statement with dynamic SQL support.
-func (s *DynNamedStmt) Select(ctx context.Context, dest interface{}, arg interface{}) error {
-	query := Preprocess(s.QueryString, arg)
+// arg is optional; pass nil or omit when there are no parameters.
+func (s *DynNamedStmt) Select(ctx context.Context, dest interface{}, arg ...interface{}) error {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query := Preprocess(s.QueryString, a)
 	// Re-compile the query after preprocessing
-	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, arg, s.Stmt.Mapper)
+	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return err
 	}
@@ -174,9 +210,14 @@ func (s *DynNamedStmt) Select(ctx context.Context, dest interface{}, arg interfa
 }
 
 // Get executes the prepared statement with dynamic SQL support for a single row.
-func (s *DynNamedStmt) Get(ctx context.Context, dest interface{}, arg interface{}) error {
-	query := Preprocess(s.QueryString, arg)
-	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, arg, s.Stmt.Mapper)
+// arg is optional; pass nil or omit when there are no parameters.
+func (s *DynNamedStmt) Get(ctx context.Context, dest interface{}, arg ...interface{}) error {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query := Preprocess(s.QueryString, a)
+	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return err
 	}
@@ -189,9 +230,14 @@ func (s *DynNamedStmt) Get(ctx context.Context, dest interface{}, arg interface{
 }
 
 // Exec executes the prepared statement with dynamic SQL support.
-func (s *DynNamedStmt) Exec(ctx context.Context, arg interface{}) (sql.Result, error) {
-	query := Preprocess(s.QueryString, arg)
-	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, arg, s.Stmt.Mapper)
+// arg is optional; pass nil or omit when there are no parameters.
+func (s *DynNamedStmt) Exec(ctx context.Context, arg ...interface{}) (sql.Result, error) {
+	var a interface{}
+	if len(arg) > 0 {
+		a = arg[0]
+	}
+	query := Preprocess(s.QueryString, a)
+	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return nil, err
 	}

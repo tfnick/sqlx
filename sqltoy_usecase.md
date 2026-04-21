@@ -16,10 +16,9 @@
 - [插入操作 (Create)](#插入操作-create)
   - [单条插入](#单条插入)
   - [批量插入](#批量插入)
-  - [动态字段插入](#动态字段插入)
 - [更新操作 (Update)](#更新操作-update)
-  - [条件更新](#条件更新)
-  - [动态字段更新](#动态字段更新)
+  - [更新单个字段](#更新单个字段)
+  - [更新多个字段](#更新多个字段)
 - [删除操作 (Delete)](#删除操作-delete)
   - [条件删除](#条件删除)
 - [事务支持](#事务支持)
@@ -386,55 +385,13 @@ func createUserMySQL(ctx context.Context, engine *sqlx.Engine, user *User) (int6
 
 ```go
 // 批量插入 - 使用结构体切片
-func batchCreateUsers(ctx context.Context, engine *sqlx.Engine, users []*User) error {
+func batchCreateUsers(ctx context.Context, engine *sqlx.Engine, users []User) error {
     sql := `
     INSERT INTO user (name, email, age, status, created_at)
     VALUES (:name, :email, :age, :status, NOW())
     `
-    
-    // 转换为切片
-    var userSlice []User
-    for _, u := range users {
-        userSlice = append(userSlice, *u)
-    }
-    
-    _, err := engine.Exec(ctx, sql, userSlice)
+    _, err := engine.Exec(ctx, sql, users)
     return err
-}
-```
-
-### 动态字段插入
-
-```go
-// 动态字段插入 - 只插入有值的字段
-func createUserDynamic(ctx context.Context, engine *sqlx.Engine, 
-    name string, email string, age int) (int64, error) {
-    
-    sql := `
-    INSERT INTO user (
-        name
-        #[ , email ]
-        #[ , age ]
-        #[ , status ]
-    ) VALUES (
-        :name
-        #[ , :email ]
-        #[ , :age ]
-        #[ , :status ]
-    )
-    RETURNING id
-    `
-    
-    params := map[string]interface{}{
-        "name":   name,
-        "email":  email,  // 空字符串 → 不插入
-        "age":    age,    // 0 → 不插入
-        "status": "active", // 有值 → 插入
-    }
-    
-    var id int64
-    err := engine.Get(ctx, &id, sql, params)
-    return id, err
 }
 ```
 
@@ -442,19 +399,19 @@ func createUserDynamic(ctx context.Context, engine *sqlx.Engine,
 
 ## 更新操作 (Update)
 
-### 条件更新
+### 更新单个字段
 
 ```go
-// 简单更新
-func updateUserStatus(ctx context.Context, engine *sqlx.Engine, 
+// 更新单个字段
+func updateUserStatus(ctx context.Context, engine *sqlx.Engine,
     userID int64, newStatus string) error {
-    
+
     sql := `
-    UPDATE user 
+    UPDATE user
     SET status = :status, updated_at = NOW()
     WHERE id = :id
     `
-    
+
     _, err := engine.Exec(ctx, sql, map[string]interface{}{
         "id":     userID,
         "status": newStatus,
@@ -463,51 +420,42 @@ func updateUserStatus(ctx context.Context, engine *sqlx.Engine,
 }
 ```
 
-### 动态字段更新
+### 更新多个字段
 
 ```go
-// 动态更新 - 只更新传入的字段
-func updateUserDynamic(ctx context.Context, engine *sqlx.Engine, 
-    userID int64, updates map[string]interface{}) error {
-    
+// 使用结构体更新
+func updateUser(ctx context.Context, engine *sqlx.Engine, user *User) error {
     sql := `
     UPDATE user SET
+        name = :name,
+        email = :email,
+        age = :age,
+        status = :status,
         updated_at = NOW()
-        #[ , name = :name ]
-        #[ , email = :email ]
-        #[ , age = :age ]
-        #[ , status = :status ]
     WHERE id = :id
     `
-    
-    params := map[string]interface{}{
-        "id": userID,
-    }
-    
-    // 只添加有值的字段
-    for k, v := range updates {
-        params[k] = v
-    }
-    
-    _, err := engine.Exec(ctx, sql, params)
+
+    _, err := engine.Exec(ctx, sql, user)
     return err
 }
 
-// 使用示例
-func main() {
-    // 只更新名称
-    updateUserDynamic(ctx, engine, 1, map[string]interface{}{
-        "name": "新名称",
-    })
-    // 生成SQL: UPDATE user SET updated_at = NOW() , name = $1 WHERE id = $2
-    
-    // 更新多个字段
-    updateUserDynamic(ctx, engine, 1, map[string]interface{}{
-        "name":  "新名称",
-        "email": "new@email.com",
-        "status": "inactive",
-    })
-    // 生成SQL: UPDATE user SET updated_at = NOW() , name = $1 , email = $2 , status = $3 WHERE id = $4
+// 使用 map 更新
+func updateUserByMap(ctx context.Context, engine *sqlx.Engine,
+    userID int64, updates map[string]interface{}) error {
+
+    sql := `
+    UPDATE user SET
+        name = :name,
+        email = :email,
+        age = :age,
+        status = :status,
+        updated_at = NOW()
+    WHERE id = :id
+    `
+
+    updates["id"] = userID
+    _, err := engine.Exec(ctx, sql, updates)
+    return err
 }
 ```
 
@@ -829,28 +777,7 @@ WHERE 1=1
 WHERE #[ name = :name ]#[ AND age >= :age ]
 ```
 
-### 2. 合理使用动态插入
-
-```go
-// 对于可选字段很多的表，使用动态插入
-sql := `
-INSERT INTO user (
-    name
-    #[ , nickname ]
-    #[ , avatar ]
-    #[ , bio ]
-    #[ , website ]
-) VALUES (
-    :name
-    #[ , :nickname ]
-    #[ , :avatar ]
-    #[ , :bio ]
-    #[ , :website ]
-)
-`
-```
-
-### 3. 使用结构体封装查询参数
+### 2. 使用结构体封装查询参数
 
 ```go
 // 定义查询结构体，便于复用和类型安全
@@ -865,18 +792,22 @@ type UserListQuery struct {
 }
 ```
 
-### 4. 日志记录生成的SQL
+### 3. 日志记录生成的SQL
 
 ```go
 // 在开发环境打印生成的SQL
 func debugSelect(ctx context.Context, engine *sqlx.Engine, dest interface{}, 
-    query string, arg interface{}) error {
+    query string, arg ...interface{}) error {
     
-    processedQuery := sqlx.Preprocess(query, arg)
-    q, args, _ := sqlx.Named(processedQuery, arg)
+    var a interface{}
+    if len(arg) > 0 {
+        a = arg[0]
+    }
+    processedQuery := sqlx.Preprocess(query, a)
+    q, args, _ := sqlx.Named(processedQuery, a)
     log.Printf("[SQL] %s | args: %v", q, args)
     
-    return engine.Select(ctx, dest, query, arg)
+    return engine.Select(ctx, dest, query, arg...)
 }
 ```
 
@@ -943,6 +874,14 @@ func (r *UserRepo) Find(ctx context.Context, q UserQuery) ([]User, error) {
     return users, err
 }
 
+// 查询全部（无参数）
+func (r *UserRepo) FindAll(ctx context.Context) ([]User, error) {
+    sql := `SELECT id, name, email, age, status, created_at FROM user ORDER BY id`
+    var users []User
+    err := r.engine.Select(ctx, &users, sql)
+    return users, err
+}
+
 // 创建用户
 func (r *UserRepo) Create(ctx context.Context, user *User) (int64, error) {
     sql := `
@@ -950,26 +889,25 @@ func (r *UserRepo) Create(ctx context.Context, user *User) (int64, error) {
     VALUES (:name, :email, :age, :status, NOW())
     RETURNING id
     `
-    
+
     var id int64
     err := r.engine.Get(ctx, &id, sql, user)
     return id, err
 }
 
-// 动态更新
-func (r *UserRepo) Update(ctx context.Context, id int64, updates map[string]interface{}) error {
+// 更新用户
+func (r *UserRepo) Update(ctx context.Context, user *User) error {
     sql := `
     UPDATE user SET
+        name = :name,
+        email = :email,
+        age = :age,
+        status = :status,
         updated_at = NOW()
-        #[ , name = :name ]
-        #[ , email = :email ]
-        #[ , age = :age ]
-        #[ , status = :status ]
     WHERE id = :id
     `
-    
-    updates["id"] = id
-    _, err := r.engine.Exec(ctx, sql, updates)
+
+    _, err := r.engine.Exec(ctx, sql, user)
     return err
 }
 
@@ -1003,8 +941,12 @@ func main() {
     }
     
     fmt.Printf("Found %d users\n", len(users))
-    for _, u := range users {
-        fmt.Printf("  - %s (%s)\n", u.Name, u.Email)
+    
+    // 无参数查询示例
+    allUsers, err := repo.FindAll(ctx)
+    if err != nil {
+        log.Fatal(err)
     }
+    fmt.Printf("Total %d users\n", len(allUsers))
 }
 ```
