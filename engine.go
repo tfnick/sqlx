@@ -254,6 +254,38 @@ func (s *DynNamedStmt) Close() error {
 	return s.Stmt.Close()
 }
 
+// WithTransaction executes fn within a database transaction. It begins a
+// transaction, calls fn with the *Tx, and automatically commits if fn returns
+// nil. If fn returns an error, the transaction is rolled back. If fn panics,
+// the transaction is rolled back and the panic is re-raised.
+//
+// Example:
+//
+//	db.WithTransaction(func(tx *sqlx.Tx) error {
+//	    _, err := tx.Exec("INSERT INTO users ...")
+//	    return err
+//	})
+func (db *DB) WithTransaction(fn func(*Tx) error) (err error) {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
+	err = fn(tx)
+	return
+}
+
 // preprocessRegex matches #[ content ] pattern for conditional SQL blocks.
 // It captures the content between #[ and ], including optional leading whitespace
 // before the #[ marker.
