@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证代码符合命名约定、禁止模式、测试覆盖要求"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证错误处理一致性、panic 使用是否正确"}

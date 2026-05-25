@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "了解文件组织结构，确定新文件放置位置"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "遵循现有的查询模式、命名约定和 struct scanning 规则"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "遵循项目的错误处理模式（errors.New、Must* 函数、deferred error）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "遵循测试要求、lint 规则、API 命名约定（Must*、*x 后缀）"}
