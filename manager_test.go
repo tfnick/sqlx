@@ -61,7 +61,7 @@ func TestManagerAddAndGet(t *testing.T) {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	got, err := mgr.Get("test")
+	got, err := mgr.DB("test")
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestManagerDefaultName(t *testing.T) {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	got, err := mgr.Get("")
+	got, err := mgr.DB("")
 	if err != nil {
 		t.Fatalf("Get with empty name failed: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestManagerDuplicateName(t *testing.T) {
 
 func TestManagerGetMissing(t *testing.T) {
 	mgr := NewManager()
-	_, err := mgr.Get("nonexistent")
+	_, err := mgr.DB("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for missing database")
 	}
@@ -120,7 +120,7 @@ func TestManagerMustGetPanic(t *testing.T) {
 			t.Fatal("MustGet should panic for missing database")
 		}
 	}()
-	mgr.MustGet("nonexistent")
+	mgr.MustDB("nonexistent")
 }
 
 func TestManagerMustAdd(t *testing.T) {
@@ -129,7 +129,7 @@ func TestManagerMustAdd(t *testing.T) {
 	defer db.Close()
 
 	mgr.MustAdd("app", db)
-	got := mgr.MustGet("app")
+	got := mgr.MustDB("app")
 	if got != db {
 		t.Fatal("MustGet returned wrong database")
 	}
@@ -254,13 +254,13 @@ func TestManagerMultipleDatabases(t *testing.T) {
 	mgr.MustAdd("logs", db2)
 	mgr.MustAdd("cache", db3)
 
-	if mgr.MustGet("app") != db1 {
+	if mgr.MustDB("app") != db1 {
 		t.Fatal("wrong db for 'app'")
 	}
-	if mgr.MustGet("logs") != db2 {
+	if mgr.MustDB("logs") != db2 {
 		t.Fatal("wrong db for 'logs'")
 	}
-	if mgr.MustGet("cache") != db3 {
+	if mgr.MustDB("cache") != db3 {
 		t.Fatal("wrong db for 'cache'")
 	}
 }
@@ -323,7 +323,7 @@ func TestManagerGetEmptyNameDefaultsToApp(t *testing.T) {
 	mgr.MustAdd("app", db)
 
 	// All empty-string variants should resolve to "app"
-	got, err := mgr.Get("")
+	got, err := mgr.DB("")
 	if err != nil {
 		t.Fatalf("Get(\"\") failed: %v", err)
 	}
@@ -338,8 +338,9 @@ func TestManagerGetMissingAfterClose(t *testing.T) {
 	mgr.MustAdd("app", db)
 	mgr.Close()
 
-	_, err := mgr.Get("app")
+	_, err := mgr.DB("app")
 	if err == nil {
 		t.Fatal("expected error for database after Close")
 	}
 }
+

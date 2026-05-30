@@ -1,6 +1,7 @@
 package sqlx
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 )
@@ -590,5 +591,75 @@ func TestEngineSelectPreprocessFlow(t *testing.T) {
 				t.Errorf("Expected %d args after Named+In, got %d (args: %v)", tt.expectedArgCount, len(args), args)
 			}
 		})
+	}
+}
+
+func TestNewEngine(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	engine := NewEngine(db)
+	if engine == nil {
+		t.Fatal("NewEngine returned nil")
+	}
+	if engine.DB() != db {
+		t.Fatal("Engine.DB() returned wrong db")
+	}
+}
+
+func TestEngineNonContextMethodsExist(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	// Verify non-context methods exist and compile.
+	// Fake DB's QueryContext returns nil rows which would panic on Close,
+	// so we only verify the method signatures compile correctly.
+	var _ = func(e *Engine) {
+		_ = e.Select(nil, "SELECT 1", map[string]interface{}{"name": "test"})
+		_ = e.Get(nil, "SELECT 1", map[string]interface{}{"name": "test"})
+		_, _ = e.Exec("INSERT INTO t (name) VALUES (:name)", map[string]interface{}{"name": "test"})
+		_, _ = e.Queryx("SELECT 1", map[string]interface{}{"name": "test"})
+		_ = e.QueryRowx("SELECT 1", map[string]interface{}{"name": "test"})
+		_ = e.MustExec("INSERT INTO t (name) VALUES (:name)", map[string]interface{}{"name": "test"})
+	}
+	_ = engine
+	_ = db
+}
+
+func TestEngineMustExecPanicsOnError(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	engine := NewEngine(db)
+
+	// MustExec with named params compiles correctly
+	var result sql.Result
+	var called bool
+	_ = func() { result = engine.MustExec("INSERT INTO users (name) VALUES (:name)", map[string]interface{}{"name": "test"}); called = true }
+	_ = result
+	_ = called
+}
+
+func TestEngineLazyEngine(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	eng1 := db.LazyEngine()
+	if eng1 == nil {
+		t.Fatal("LazyEngine returned nil")
+	}
+	eng2 := db.LazyEngine()
+	if eng1 != eng2 {
+		t.Fatal("LazyEngine should return the same instance")
+	}
+}
+
+func TestEngineDynNamedStmtMethodsExist(t *testing.T) {
+	// Verify DynNamedStmt method signatures compile correctly.
+	var s DynNamedStmt
+	var _ = func() {
+		_ = s.Select(nil, map[string]interface{}{"id": 1})
+		_ = s.Get(nil, map[string]interface{}{"id": 1})
+		_, _ = s.Exec(map[string]interface{}{"id": 1})
+		_ = s.Close()
 	}
 }

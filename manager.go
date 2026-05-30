@@ -9,18 +9,21 @@ import (
 //
 // Example:
 //
-//	mgr := sqlx.NewManager()
-//	mgr.MustOpen("app", "sqlite3", "app.db")
-//	mgr.MustOpen("logs", "sqlite3", "logs.db")
+//	mg := sqlx.NewManager()
+//	mg.MustOpen("app", "sqlite3", "app.db")
+//	mg.MustOpen("logs", "sqlite3", "logs.db")
+//	defer mg.Close()
 //
-//	db := mgr.MustGet("app")
-//	users := []User{}
+//	// Get the *DB handle and use it directly
+//	db := mg.MustDB("app")
 //	db.Select(&users, "SELECT * FROM users")
 //
-//	logDB := mgr.MustGet("logs")
+//	logDB := mg.MustDB("logs")
 //	logDB.Exec("INSERT INTO access_logs ...")
 //
-//	defer mgr.Close()
+//	// Get Engine for dynamic SQL from the DB
+//	engine := db.LazyEngine()
+//	engine.Select(&users, "SELECT * FROM users WHERE 1=1 #[ AND status=:status ]", params)
 type Manager struct {
 	databases map[string]*DB
 	mu        sync.RWMutex
@@ -96,10 +99,10 @@ func (m *Manager) MustAdd(name string, db *DB) {
 	}
 }
 
-// Get returns the database registered under the given name.
+// DB returns the database registered under the given name.
 // If name is empty, "app" is used.
 // Returns an error if the database is not registered.
-func (m *Manager) Get(name string) (*DB, error) {
+func (m *Manager) DB(name string) (*DB, error) {
 	name = resolveName(name)
 
 	m.mu.RLock()
@@ -112,9 +115,9 @@ func (m *Manager) Get(name string) (*DB, error) {
 	return db, nil
 }
 
-// MustGet is like Get but panics if the database is not registered.
-func (m *Manager) MustGet(name string) *DB {
-	db, err := m.Get(name)
+// MustDB is like DB but panics if the database is not registered.
+func (m *Manager) MustDB(name string) *DB {
+	db, err := m.DB(name)
 	if err != nil {
 		panic(err)
 	}
@@ -135,3 +138,4 @@ func (m *Manager) Close() error {
 	}
 	return lastErr
 }
+

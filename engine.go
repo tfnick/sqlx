@@ -30,13 +30,13 @@ import (
 //	}
 //
 //	var users []User
-//	err := engine.Select(ctx, &users, sql, params)
+//	err := engine.Select(&users, sql, params)
 //
 // Example without parameters:
 //
 //	sql := `SELECT * FROM users ORDER BY created_at DESC`
 //	var users []User
-//	err := engine.Select(ctx, &users, sql)
+//	err := engine.Select(&users, sql)
 type Engine struct {
 	db *DB
 }
@@ -57,12 +57,15 @@ func (e *Engine) DB() *DB {
 //
 // dest must be a pointer to a slice.
 // arg is optional; pass nil or omit when there are no parameters.
-func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg ...interface{}) error {
+func (e *Engine) Select(dest interface{}, query string, arg ...interface{}) error {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query = Preprocess(query, a)
+	if a == nil {
+		return e.db.SelectContext(context.Background(), dest, query)
+	}
 	q, args, err := Named(query, a)
 	if err != nil {
 		return err
@@ -72,7 +75,7 @@ func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg
 		return err
 	}
 	q = e.db.Rebind(q)
-	return e.db.SelectContext(ctx, dest, q, args...)
+	return e.db.SelectContext(context.Background(), dest, q, args...)
 }
 
 // Get executes a query with dynamic SQL support and scans a single row into dest.
@@ -82,12 +85,15 @@ func (e *Engine) Select(ctx context.Context, dest interface{}, query string, arg
 // dest must be a pointer to a struct or scannable type.
 // Returns sql.ErrNoRows if no result is found.
 // arg is optional; pass nil or omit when there are no parameters.
-func (e *Engine) Get(ctx context.Context, dest interface{}, query string, arg ...interface{}) error {
+func (e *Engine) Get(dest interface{}, query string, arg ...interface{}) error {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query = Preprocess(query, a)
+	if a == nil {
+		return e.db.GetContext(context.Background(), dest, query)
+	}
 	q, args, err := Named(query, a)
 	if err != nil {
 		return err
@@ -97,19 +103,22 @@ func (e *Engine) Get(ctx context.Context, dest interface{}, query string, arg ..
 		return err
 	}
 	q = e.db.Rebind(q)
-	return e.db.GetContext(ctx, dest, q, args...)
+	return e.db.GetContext(context.Background(), dest, q, args...)
 }
 
 // Exec executes a query with dynamic SQL support.
 // The query supports #[ ] conditional blocks that are removed when the
 // corresponding named parameter is nil, empty, or not present.
 // arg is optional; pass nil or omit when there are no parameters.
-func (e *Engine) Exec(ctx context.Context, query string, arg ...interface{}) (sql.Result, error) {
+func (e *Engine) Exec(query string, arg ...interface{}) (sql.Result, error) {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query = Preprocess(query, a)
+	if a == nil {
+		return e.db.ExecContext(context.Background(), query)
+	}
 	q, args, err := Named(query, a)
 	if err != nil {
 		return nil, err
@@ -119,18 +128,31 @@ func (e *Engine) Exec(ctx context.Context, query string, arg ...interface{}) (sq
 		return nil, err
 	}
 	q = e.db.Rebind(q)
-	return e.db.ExecContext(ctx, q, args...)
+	return e.db.ExecContext(context.Background(), q, args...)
 }
+
+// MustExec executes a query with dynamic SQL support and panics on error.
+func (e *Engine) MustExec(query string, arg ...interface{}) sql.Result {
+	res, err := e.Exec(query, arg...)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+
 
 // Queryx executes a query with dynamic SQL support and returns *sqlx.Rows.
 // The query supports #[ ] conditional blocks.
 // arg is optional; pass nil or omit when there are no parameters.
-func (e *Engine) Queryx(ctx context.Context, query string, arg ...interface{}) (*Rows, error) {
+func (e *Engine) Queryx(query string, arg ...interface{}) (*Rows, error) {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query = Preprocess(query, a)
+	if a == nil {
+		return e.db.QueryxContext(context.Background(), query)
+	}
 	q, args, err := Named(query, a)
 	if err != nil {
 		return nil, err
@@ -140,18 +162,21 @@ func (e *Engine) Queryx(ctx context.Context, query string, arg ...interface{}) (
 		return nil, err
 	}
 	q = e.db.Rebind(q)
-	return e.db.QueryxContext(ctx, q, args...)
+	return e.db.QueryxContext(context.Background(), q, args...)
 }
 
 // QueryRowx executes a query with dynamic SQL support and returns *sqlx.Row.
 // The query supports #[ ] conditional blocks.
 // arg is optional; pass nil or omit when there are no parameters.
-func (e *Engine) QueryRowx(ctx context.Context, query string, arg ...interface{}) *Row {
+func (e *Engine) QueryRowx(query string, arg ...interface{}) *Row {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query = Preprocess(query, a)
+	if a == nil {
+		return e.db.QueryRowxContext(context.Background(), query)
+	}
 	q, args, err := Named(query, a)
 	if err != nil {
 		return &Row{err: err}
@@ -161,10 +186,10 @@ func (e *Engine) QueryRowx(ctx context.Context, query string, arg ...interface{}
 		return &Row{err: err}
 	}
 	q = e.db.Rebind(q)
-	return e.db.QueryRowxContext(ctx, q, args...)
+	return e.db.QueryRowxContext(context.Background(), q, args...)
 }
 
-// NamedStmt is a prepared statement with dynamic SQL support.
+// DynNamedStmt is a prepared statement with dynamic SQL support.
 type DynNamedStmt struct {
 	Params      []string
 	QueryString string
@@ -190,13 +215,15 @@ func (e *Engine) PrepareNamed(query string) (*DynNamedStmt, error) {
 
 // Select executes the prepared statement with dynamic SQL support.
 // arg is optional; pass nil or omit when there are no parameters.
-func (s *DynNamedStmt) Select(ctx context.Context, dest interface{}, arg ...interface{}) error {
+func (s *DynNamedStmt) Select(dest interface{}, arg ...interface{}) error {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query := Preprocess(s.QueryString, a)
-	// Re-compile the query after preprocessing
+	if a == nil {
+		return s.engine.db.SelectContext(context.Background(), dest, query)
+	}
 	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return err
@@ -206,17 +233,20 @@ func (s *DynNamedStmt) Select(ctx context.Context, dest interface{}, arg ...inte
 		return err
 	}
 	q = s.engine.db.Rebind(q)
-	return s.engine.db.SelectContext(ctx, dest, q, args...)
+	return s.engine.db.SelectContext(context.Background(), dest, q, args...)
 }
 
 // Get executes the prepared statement with dynamic SQL support for a single row.
 // arg is optional; pass nil or omit when there are no parameters.
-func (s *DynNamedStmt) Get(ctx context.Context, dest interface{}, arg ...interface{}) error {
+func (s *DynNamedStmt) Get(dest interface{}, arg ...interface{}) error {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query := Preprocess(s.QueryString, a)
+	if a == nil {
+		return s.engine.db.GetContext(context.Background(), dest, query)
+	}
 	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return err
@@ -226,17 +256,20 @@ func (s *DynNamedStmt) Get(ctx context.Context, dest interface{}, arg ...interfa
 		return err
 	}
 	q = s.engine.db.Rebind(q)
-	return s.engine.db.GetContext(ctx, dest, q, args...)
+	return s.engine.db.GetContext(context.Background(), dest, q, args...)
 }
 
 // Exec executes the prepared statement with dynamic SQL support.
 // arg is optional; pass nil or omit when there are no parameters.
-func (s *DynNamedStmt) Exec(ctx context.Context, arg ...interface{}) (sql.Result, error) {
+func (s *DynNamedStmt) Exec(arg ...interface{}) (sql.Result, error) {
 	var a interface{}
 	if len(arg) > 0 {
 		a = arg[0]
 	}
 	query := Preprocess(s.QueryString, a)
+	if a == nil {
+		return s.engine.db.ExecContext(context.Background(), query)
+	}
 	q, args, err := bindNamedMapper(BindType(s.engine.db.DriverName()), query, a, s.Stmt.Mapper)
 	if err != nil {
 		return nil, err
@@ -246,7 +279,7 @@ func (s *DynNamedStmt) Exec(ctx context.Context, arg ...interface{}) (sql.Result
 		return nil, err
 	}
 	q = s.engine.db.Rebind(q)
-	return s.engine.db.ExecContext(ctx, q, args...)
+	return s.engine.db.ExecContext(context.Background(), q, args...)
 }
 
 // Close closes the prepared statement.
