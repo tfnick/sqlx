@@ -124,6 +124,26 @@ func (m *Manager) MustDB(name string) *DB {
 	return db
 }
 
+// Engine returns the Engine for the named database, creating one lazily if needed.
+// This is equivalent to m.DB(name).LazyEngine() but in a single call.
+// If name is empty, "app" is used.
+func (m *Manager) Engine(name string) (*Engine, error) {
+	db, err := m.DB(name)
+	if err != nil {
+		return nil, err
+	}
+	return db.LazyEngine(), nil
+}
+
+// MustEngine is like Engine but panics if the database is not registered.
+func (m *Manager) MustEngine(name string) *Engine {
+	eng, err := m.Engine(name)
+	if err != nil {
+		panic(err)
+	}
+	return eng
+}
+
 // Close closes all registered databases and clears the registry.
 func (m *Manager) Close() error {
 	m.mu.Lock()

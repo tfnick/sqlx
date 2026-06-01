@@ -344,3 +344,79 @@ func TestManagerGetMissingAfterClose(t *testing.T) {
 	}
 }
 
+func TestManagerEngine(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	mgr.MustAdd("app", db)
+
+	eng, err := mgr.Engine("app")
+	if err != nil {
+		t.Fatalf("Engine failed: %v", err)
+	}
+	if eng == nil {
+		t.Fatal("Engine returned nil")
+	}
+	if eng.db != db {
+		t.Fatal("Engine wraps wrong DB")
+	}
+}
+
+func TestManagerEngineDefaultName(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	mgr.MustAdd("app", db)
+
+	eng, err := mgr.Engine("")
+	if err != nil {
+		t.Fatalf("Engine(\"\") failed: %v", err)
+	}
+	if eng.db != db {
+		t.Fatal("Engine(\"\") should default to 'app' database")
+	}
+}
+
+func TestManagerEngineMissing(t *testing.T) {
+	mgr := NewManager()
+	_, err := mgr.Engine("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing database")
+	}
+}
+
+func TestManagerMustEnginePanic(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("MustEngine should panic for missing database")
+		}
+	}()
+	mgr.MustEngine("nonexistent")
+}
+
+func TestManagerMustEngine(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	mgr.MustAdd("app", db)
+
+	eng := mgr.MustEngine("app")
+	if eng == nil {
+		t.Fatal("MustEngine returned nil")
+	}
+}
+
+func TestManagerEngineSameInstance(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	mgr.MustAdd("app", db)
+
+	eng1 := mgr.MustEngine("app")
+	eng2 := mgr.MustEngine("app")
+	if eng1 != eng2 {
+		t.Fatal("Engine should return the same instance on repeated calls")
+	}
+}
+
