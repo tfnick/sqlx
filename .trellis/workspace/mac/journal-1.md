@@ -71,3 +71,36 @@ Added Engine()/MustEngine() to Manager, eliminating the two-step DB()+LazyEngine
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Manager shortcut methods
+
+**Date**: 2026-06-02
+**Task**: Manager shortcut methods
+**Branch**: `master`
+
+### Summary
+
+Added Get/Select/Exec/Queryx/QueryRowx to Manager for zero-boilerplate access to default Engine. 32 tests pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2845a9d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
