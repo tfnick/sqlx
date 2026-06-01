@@ -420,3 +420,53 @@ func TestManagerEngineSameInstance(t *testing.T) {
 	}
 }
 
+func TestManagerShortcutGetPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Get should panic when 'app' database is not registered")
+		}
+	}()
+	mgr.Get(nil, "SELECT 1")
+}
+
+func TestManagerShortcutSelectPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Select should panic when 'app' database is not registered")
+		}
+	}()
+	mgr.Select(nil, "SELECT 1")
+}
+
+func TestManagerShortcutExecPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Exec should panic when 'app' database is not registered")
+		}
+	}()
+	mgr.Exec("SELECT 1")
+}
+
+func TestManagerShortcutQueryxPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Queryx should panic when 'app' database is not registered")
+		}
+	}()
+	mgr.Queryx("SELECT 1")
+}
+
+func TestManagerShortcutQueryRowxPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("QueryRowx should panic when 'app' database is not registered")
+		}
+	}()
+	mgr.QueryRowx("SELECT 1")
+}
+
