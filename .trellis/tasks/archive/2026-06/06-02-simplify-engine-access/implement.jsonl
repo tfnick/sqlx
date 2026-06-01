@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "遵循 Engine 和 Manager 的设计模式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "遵循 Must* 和 Error-return 双模式约定"}
