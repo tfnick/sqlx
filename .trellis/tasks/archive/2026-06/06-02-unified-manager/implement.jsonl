@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "DB/Engine 的 Get/Select/Exec 签名和路由规则"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "命名约定、错误处理模式"}
