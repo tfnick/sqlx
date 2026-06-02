@@ -152,52 +152,105 @@ func (m *Manager) MustEngine(name string) *Engine {
 	return eng
 }
 
-// Get retrieves a single row using the default database's Engine.
-// Supports named parameters (:name) and dynamic SQL (#[ ] blocks).
+// hasNamedParams returns true if the query should be routed to Engine
+// (contains :param_name patterns or #[ ] dynamic SQL blocks).
+func hasNamedParams(query string) bool {
+	return namedParamRegex.MatchString(query) || preprocessRegex.MatchString(query)
+}
+
+// Get retrieves a single row from the default database.
+// Auto-routes to Engine (named params + dynamic SQL) if the query contains
+// :param patterns, otherwise uses DB directly (? placeholders).
 //
-// Example:
+// Example (named params):
 //
 //	var account Account
 //	err := mgr.Get(&account, "SELECT * FROM accounts WHERE account_id = :id",
 //	    map[string]interface{}{"id": userID})
-func (m *Manager) Get(dest interface{}, query string, arg ...interface{}) error {
-	return m.MustEngine("").Get(dest, query, arg...)
+//
+// Example (positional params):
+//
+//	var account Account
+//	err := mgr.Get(&account, "SELECT * FROM accounts WHERE id = ?", userID)
+func (m *Manager) Get(dest interface{}, query string, args ...interface{}) error {
+	if hasNamedParams(query) {
+		return m.MustEngine("").Get(dest, query, args...)
+	}
+	return m.MustDB("").Get(dest, query, args...)
 }
 
-// Select retrieves multiple rows using the default database's Engine.
-// Supports named parameters (:name) and dynamic SQL (#[ ] blocks).
+// Select retrieves multiple rows from the default database.
+// Auto-routes to Engine (named params + dynamic SQL) if the query contains
+// :param patterns, otherwise uses DB directly (? placeholders).
 // dest must be a pointer to a slice.
 //
-// Example:
+// Example (named params):
 //
 //	var users []User
 //	err := mgr.Select(&users, "SELECT * FROM users WHERE status = :status",
 //	    map[string]interface{}{"status": "active"})
-func (m *Manager) Select(dest interface{}, query string, arg ...interface{}) error {
-	return m.MustEngine("").Select(dest, query, arg...)
+//
+// Example (positional params):
+//
+//	var users []User
+//	err := mgr.Select(&users, "SELECT * FROM users WHERE status = ?", "active")
+func (m *Manager) Select(dest interface{}, query string, args ...interface{}) error {
+	if hasNamedParams(query) {
+		return m.MustEngine("").Select(dest, query, args...)
+	}
+	return m.MustDB("").Select(dest, query, args...)
 }
 
-// Exec executes a query using the default database's Engine.
-// Supports named parameters (:name) and dynamic SQL (#[ ] blocks).
+// Exec executes a query on the default database.
+// Auto-routes to Engine (named params + dynamic SQL) if the query contains
+// :param patterns, otherwise uses DB directly (? placeholders).
 //
-// Example:
+// Example (named params):
 //
 //	result, err := mgr.Exec("INSERT INTO users (name) VALUES (:name)",
 //	    map[string]interface{}{"name": "Alice"})
-func (m *Manager) Exec(query string, arg ...interface{}) (sql.Result, error) {
-	return m.MustEngine("").Exec(query, arg...)
+//
+// Example (positional params):
+//
+//	result, err := mgr.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
+func (m *Manager) Exec(query string, args ...interface{}) (sql.Result, error) {
+	if hasNamedParams(query) {
+		return m.MustEngine("").Exec(query, args...)
+	}
+	return m.MustDB("").Exec(query, args...)
 }
 
-// Queryx executes a query and returns *Rows using the default database's Engine.
-// Supports named parameters (:name) and dynamic SQL (#[ ] blocks).
-func (m *Manager) Queryx(query string, arg ...interface{}) (*Rows, error) {
-	return m.MustEngine("").Queryx(query, arg...)
+// Queryx executes a query and returns *Rows from the default database.
+// Auto-routes to Engine (named params + dynamic SQL) if the query contains
+// :param patterns, otherwise uses DB directly (? placeholders).
+func (m *Manager) Queryx(query string, args ...interface{}) (*Rows, error) {
+	if hasNamedParams(query) {
+		return m.MustEngine("").Queryx(query, args...)
+	}
+	return m.MustDB("").Queryx(query, args...)
 }
 
-// QueryRowx executes a query and returns *Row using the default database's Engine.
-// Supports named parameters (:name) and dynamic SQL (#[ ] blocks).
-func (m *Manager) QueryRowx(query string, arg ...interface{}) *Row {
-	return m.MustEngine("").QueryRowx(query, arg...)
+// QueryRowx executes a query and returns *Row from the default database.
+// Auto-routes to Engine (named params + dynamic SQL) if the query contains
+// :param patterns, otherwise uses DB directly (? placeholders).
+func (m *Manager) QueryRowx(query string, args ...interface{}) *Row {
+	if hasNamedParams(query) {
+		return m.MustEngine("").QueryRowx(query, args...)
+	}
+	return m.MustDB("").QueryRowx(query, args...)
+}
+
+// WithTransaction executes fn within a transaction on the default database.
+// Auto-commits if fn returns nil, rolls back if fn returns an error or panics.
+//
+// Example:
+//
+//	err := mgr.WithTransaction(func(tx *sqlx.Tx) error {
+//	    _, err := tx.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
+//	    return err
+//	})
+func (m *Manager) WithTransaction(fn func(*Tx) error) error {
+	return m.MustDB("").WithTransaction(fn)
 }
 
 // Close closes all registered databases and clears the registry.

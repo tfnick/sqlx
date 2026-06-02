@@ -470,3 +470,75 @@ func TestManagerShortcutQueryRowxPanicsWithoutApp(t *testing.T) {
 	mgr.QueryRowx("SELECT 1")
 }
 
+func TestHasNamedParams(t *testing.T) {
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{"SELECT * FROM t WHERE id = :id", true},
+		{"INSERT INTO t (a) VALUES (:a)", true},
+		{"SELECT * FROM t WHERE id = ?", false},
+		{"SELECT * FROM t ORDER BY id ASC", false},
+		{"SELECT * FROM t WHERE time > '12:00'", false}, // colon in string literal
+		{"SELECT * FROM t #[ AND status = :status ]", true},
+		{"SELECT * FROM t WHERE 1=1 #[ AND status = ? ]", true}, // #[ ] routes to Engine
+	}
+	for _, tt := range tests {
+		if got := hasNamedParams(tt.query); got != tt.want {
+			t.Errorf("hasNamedParams(%q) = %v, want %v", tt.query, got, tt.want)
+		}
+	}
+}
+
+func TestManagerGetWithNamedParamsPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Get with :named param should panic when 'app' is not registered")
+		}
+	}()
+	mgr.Get(nil, "SELECT * FROM t WHERE id = :id", map[string]interface{}{"id": 1})
+}
+
+func TestManagerGetWithPositionalParamsPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Get with ? param should panic when 'app' is not registered")
+		}
+	}()
+	mgr.Get(nil, "SELECT * FROM t WHERE id = ?", 1)
+}
+
+func TestManagerWithTransaction(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	mgr.MustAdd("app", db)
+
+	var called bool
+	err := mgr.WithTransaction(func(tx *Tx) error {
+		called = true
+		if tx == nil {
+			t.Fatal("expected non-nil Tx")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithTransaction failed: %v", err)
+	}
+	if !called {
+		t.Fatal("fn was not called")
+	}
+}
+
+func TestManagerWithTransactionPanicsWithoutApp(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("WithTransaction should panic when 'app' is not registered")
+		}
+	}()
+	mgr.WithTransaction(func(tx *Tx) error { return nil })
+}
+
