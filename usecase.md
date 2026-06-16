@@ -4,31 +4,34 @@
 
 ## 目录
 
-- [初始化](#初始化)
-  - [单数据库](#单数据库)
-  - [多数据库 (Manager)](#多数据库-manager)
-- [DB 基础 CRUD](#db-基础-crud)
-  - [查询多条 (Select)](#查询多条-select)
-  - [查询单条 (Get)](#查询单条-get)
-  - [写入 (Exec / MustExec)](#写入-exec--mustexec)
-  - [命名参数 (NamedExec / NamedQuery)](#命名参数-namedexec--namedquery)
-  - [批量插入](#批量插入)
-  - [IN 子句](#in-子句)
-  - [事务 (WithTransaction)](#事务-withtransaction)
-- [DB.Engine 动态 SQL](#dbengine-动态-sql)
-  - [获取 Engine](#获取-engine)
-  - [多条件动态查询](#多条件动态查询)
-  - [IN 子句 + 动态裁剪](#in-子句--动态裁剪)
-  - [分页查询](#分页查询)
-  - [关联查询](#关联查询)
-  - [结构体参数](#结构体参数)
-  - [预处理语句 (PrepareNamed)](#预处理语句-preparenamed)
-  - [条件判断规则](#条件判断规则)
-- [完整示例 (Repository 模式)](#完整示例-repository-模式)
+- [sqlx 使用指南](#sqlx-使用指南)
+  - [目录](#目录)
+  - [初始化冲突点2](#初始化冲突点2)
+    - [单数据库](#单数据库)
+    - [多数据库 (Manager)](#多数据库-manager)
+  - [DB 基础 CRUD](#db-基础-crud)
+    - [模型定义](#模型定义)
+    - [查询多条 (Select)](#查询多条-select)
+    - [查询单条 (Get)](#查询单条-get)
+    - [写入 (Exec / MustExec)](#写入-exec--mustexec)
+    - [命名参数 (NamedExec / NamedQuery)](#命名参数-namedexec--namedquery)
+    - [批量插入](#批量插入)
+    - [IN 子句](#in-子句)
+    - [事务 (WithTransaction)](#事务-withtransaction)
+  - [DB.Engine 动态 SQL](#dbengine-动态-sql)
+    - [获取 Engine](#获取-engine)
+    - [多条件动态查询](#多条件动态查询)
+    - [IN 子句 + 动态裁剪](#in-子句--动态裁剪)
+    - [分页查询](#分页查询)
+    - [关联查询](#关联查询)
+    - [结构体参数](#结构体参数)
+    - [预处理语句 (PrepareNamed)](#预处理语句-preparenamed)
+    - [条件判断规则](#条件判断规则)
+  - [完整示例 (Repository 模式)](#完整示例-repository-模式)
 
 ---
 
-## 初始化
+## 初始化冲突点2
 
 ### 单数据库
 
