@@ -639,9 +639,10 @@ When a domain write and job enqueue must commit atomically, use
 ```go
 func (s *OrderService) CreateOrder(ctx context.Context, order Order, body []byte) error {
     return s.app.WithTransactionRaw(ctx, nil, func(tx *sqlx.Engine, rawTx *sql.Tx) error {
-        if _, err := tx.Insert("orders", order,
-            sqlx.Columns("customer_id", "status", "total"),
-        ); err != nil {
+        if _, err := tx.ExecP(`
+            INSERT INTO orders (customer_id, status, total)
+            VALUES (?, ?, ?)
+        `, order.CustomerID, order.Status, order.Total); err != nil {
             return err
         }
 
