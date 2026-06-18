@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend quality rules for any later implementation check."}
+{"file": ".trellis/tasks/06-19-goqite-engine-first-orm/prd.md", "reason": "Acceptance criteria for checking any later implementation."}
+{"file": ".trellis/tasks/06-19-goqite-engine-first-orm/research/goqite-integration.md", "reason": "Research constraints to verify against any later code changes."}

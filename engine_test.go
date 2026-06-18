@@ -411,6 +411,15 @@ func TestPreprocessINWithNilSlice(t *testing.T) {
 	}
 }
 
+func TestNormalizeInNamedParams(t *testing.T) {
+	query := "SELECT * FROM users WHERE id IN :ids AND status in :statuses"
+	got := normalizeInNamedParams(query)
+	want := "SELECT * FROM users WHERE id IN (:ids) AND status IN (:statuses)"
+	if got != want {
+		t.Fatalf("normalizeInNamedParams() = %q, want %q", got, want)
+	}
+}
+
 // TestPreprocessMultipleINClause tests multiple IN clauses with different slice states
 func TestPreprocessMultipleINClause(t *testing.T) {
 	query := `SELECT * FROM user WHERE 1=1
@@ -419,27 +428,27 @@ func TestPreprocessMultipleINClause(t *testing.T) {
 #[ AND status IN :statuses ]`
 
 	tests := []struct {
-		name              string
-		params            map[string]interface{}
-		shouldContain     []string
-		shouldNotContain  []string
+		name             string
+		params           map[string]interface{}
+		shouldContain    []string
+		shouldNotContain []string
 	}{
 		{
-			name:           "all slices empty - all conditions removed",
-			params:         map[string]interface{}{"ids": []int{}, "ages": []int{}, "statuses": []string{}},
-			shouldContain:  []string{"WHERE 1=1"},
+			name:             "all slices empty - all conditions removed",
+			params:           map[string]interface{}{"ids": []int{}, "ages": []int{}, "statuses": []string{}},
+			shouldContain:    []string{"WHERE 1=1"},
 			shouldNotContain: []string{"id IN", "age IN", "status IN"},
 		},
 		{
-			name:           "mixed slices",
-			params:         map[string]interface{}{"ids": []int{1, 2}, "ages": []int{}, "statuses": []string{"active"}},
-			shouldContain:  []string{"id IN :ids", "status IN :statuses"},
+			name:             "mixed slices",
+			params:           map[string]interface{}{"ids": []int{1, 2}, "ages": []int{}, "statuses": []string{"active"}},
+			shouldContain:    []string{"id IN :ids", "status IN :statuses"},
 			shouldNotContain: []string{"age IN"},
 		},
 		{
-			name:           "nil slices - conditions removed",
-			params:         map[string]interface{}{"ids": nil, "ages": nil, "statuses": nil},
-			shouldContain:  []string{"WHERE 1=1"},
+			name:             "nil slices - conditions removed",
+			params:           map[string]interface{}{"ids": nil, "ages": nil, "statuses": nil},
+			shouldContain:    []string{"WHERE 1=1"},
 			shouldNotContain: []string{"id IN", "age IN", "status IN"},
 		},
 	}
@@ -605,6 +614,94 @@ func TestNewEngine(t *testing.T) {
 	if engine.DB() != db {
 		t.Fatal("Engine.DB() returned wrong db")
 	}
+	if engine.StdDB() != db.StdDB() {
+		t.Fatal("Engine.StdDB() returned wrong standard db")
+	}
+}
+
+func TestDBStdDB(t *testing.T) {
+	raw := newFakeDB()
+	db := NewDb(raw, "sqlite3")
+	defer db.Close()
+
+	if db.StdDB() != raw {
+		t.Fatal("DB.StdDB() returned wrong standard db")
+	}
+}
+
+func TestTxStdTx(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	tx, err := db.BeginTxx(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("BeginTxx failed: %v", err)
+	}
+	defer tx.Rollback()
+
+	if tx.StdTx() != tx.Tx {
+		t.Fatal("Tx.StdTx() returned wrong standard tx")
+	}
+}
+
+func TestEngineWithTransactionRawSuccess(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	var called bool
+	err := engine.WithTransactionRaw(t.Context(), nil, func(txEngine *Engine, rawTx *sql.Tx) error {
+		called = true
+		if txEngine == nil {
+			t.Fatal("expected non-nil transaction Engine")
+		}
+		if txEngine.DB() != nil {
+			t.Fatal("transaction Engine should not expose a DB wrapper")
+		}
+		if txEngine.StdDB() != nil {
+			t.Fatal("transaction Engine should not expose a standard DB")
+		}
+		if rawTx == nil {
+			t.Fatal("expected non-nil standard transaction")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithTransactionRaw failed: %v", err)
+	}
+	if !called {
+		t.Fatal("fn was not called")
+	}
+}
+
+func TestEngineWithTransactionRawError(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	testErr := sql.ErrNoRows
+	err := engine.WithTransactionRaw(t.Context(), nil, func(*Engine, *sql.Tx) error {
+		return testErr
+	})
+	if err != testErr {
+		t.Fatalf("expected %v, got %v", testErr, err)
+	}
+}
+
+func TestEngineWithTransactionRawRejectsNested(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	err := engine.WithTransactionRaw(t.Context(), nil, func(txEngine *Engine, rawTx *sql.Tx) error {
+		return txEngine.WithTransactionRaw(t.Context(), nil, func(*Engine, *sql.Tx) error {
+			t.Fatal("nested callback should not be called")
+			return nil
+		})
+	})
+	if err == nil {
+		t.Fatal("expected nested transaction error")
+	}
 }
 
 func TestEngineNonContextMethodsExist(t *testing.T) {
@@ -634,23 +731,12 @@ func TestEngineMustExecPanicsOnError(t *testing.T) {
 	// MustExec with named params compiles correctly
 	var result sql.Result
 	var called bool
-	_ = func() { result = engine.MustExec("INSERT INTO users (name) VALUES (:name)", map[string]interface{}{"name": "test"}); called = true }
+	_ = func() {
+		result = engine.MustExec("INSERT INTO users (name) VALUES (:name)", map[string]interface{}{"name": "test"})
+		called = true
+	}
 	_ = result
 	_ = called
-}
-
-func TestEngineLazyEngine(t *testing.T) {
-	db := NewDb(newFakeDB(), "sqlite3")
-	defer db.Close()
-
-	eng1 := db.LazyEngine()
-	if eng1 == nil {
-		t.Fatal("LazyEngine returned nil")
-	}
-	eng2 := db.LazyEngine()
-	if eng1 != eng2 {
-		t.Fatal("LazyEngine should return the same instance")
-	}
 }
 
 func TestEngineDynNamedStmtMethodsExist(t *testing.T) {

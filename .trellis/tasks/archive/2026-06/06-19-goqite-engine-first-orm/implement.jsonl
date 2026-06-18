@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index for any later implementation work in this Go library."}
+{"file": ".trellis/tasks/06-19-goqite-engine-first-orm/prd.md", "reason": "Task requirements and recommended goqite integration direction."}
+{"file": ".trellis/tasks/06-19-goqite-engine-first-orm/research/goqite-integration.md", "reason": "Research notes on goqite API shape and sqlx integration friction."}

@@ -245,8 +245,6 @@ type DB struct {
 	driverName string
 	unsafe     bool
 	Mapper     *reflectx.Mapper
-	engine     *Engine
-	engineOnce sync.Once
 }
 
 // NewDb returns a new sqlx DB wrapper for a pre-existing *sql.DB.  The
@@ -255,6 +253,11 @@ type DB struct {
 //lint:ignore ST1003 changing this would break the package interface.
 func NewDb(db *sql.DB, driverName string) *DB {
 	return &DB{DB: db, driverName: driverName, Mapper: mapper()}
+}
+
+// StdDB returns the underlying standard library *sql.DB.
+func (db *DB) StdDB() *sql.DB {
+	return db.DB
 }
 
 // DriverName returns the driverName passed to the Open function for this DB.
@@ -297,16 +300,6 @@ func (db *DB) Rebind(query string) string {
 // safety behavior.
 func (db *DB) Unsafe() *DB {
 	return &DB{DB: db.DB, driverName: db.driverName, unsafe: true, Mapper: db.Mapper}
-}
-
-// LazyEngine returns the Engine associated with this DB, creating one lazily
-// on first access. The Engine provides dynamic SQL capabilities with #[ ]
-// conditional blocks and :named parameter support. Safe for concurrent use.
-func (db *DB) LazyEngine() *Engine {
-	db.engineOnce.Do(func() {
-		db.engine = NewEngine(db)
-	})
-	return db.engine
 }
 
 // BindNamed binds a query using the DB driver's bindvar type.
@@ -405,6 +398,11 @@ type Tx struct {
 	driverName string
 	unsafe     bool
 	Mapper     *reflectx.Mapper
+}
+
+// StdTx returns the underlying standard library *sql.Tx.
+func (tx *Tx) StdTx() *sql.Tx {
+	return tx.Tx
 }
 
 // DriverName returns the driverName used by the DB which began this transaction.
