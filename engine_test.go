@@ -614,6 +614,94 @@ func TestNewEngine(t *testing.T) {
 	if engine.DB() != db {
 		t.Fatal("Engine.DB() returned wrong db")
 	}
+	if engine.StdDB() != db.StdDB() {
+		t.Fatal("Engine.StdDB() returned wrong standard db")
+	}
+}
+
+func TestDBStdDB(t *testing.T) {
+	raw := newFakeDB()
+	db := NewDb(raw, "sqlite3")
+	defer db.Close()
+
+	if db.StdDB() != raw {
+		t.Fatal("DB.StdDB() returned wrong standard db")
+	}
+}
+
+func TestTxStdTx(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	tx, err := db.BeginTxx(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("BeginTxx failed: %v", err)
+	}
+	defer tx.Rollback()
+
+	if tx.StdTx() != tx.Tx {
+		t.Fatal("Tx.StdTx() returned wrong standard tx")
+	}
+}
+
+func TestEngineWithTransactionRawSuccess(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	var called bool
+	err := engine.WithTransactionRaw(t.Context(), nil, func(txEngine *Engine, rawTx *sql.Tx) error {
+		called = true
+		if txEngine == nil {
+			t.Fatal("expected non-nil transaction Engine")
+		}
+		if txEngine.DB() != nil {
+			t.Fatal("transaction Engine should not expose a DB wrapper")
+		}
+		if txEngine.StdDB() != nil {
+			t.Fatal("transaction Engine should not expose a standard DB")
+		}
+		if rawTx == nil {
+			t.Fatal("expected non-nil standard transaction")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithTransactionRaw failed: %v", err)
+	}
+	if !called {
+		t.Fatal("fn was not called")
+	}
+}
+
+func TestEngineWithTransactionRawError(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	testErr := sql.ErrNoRows
+	err := engine.WithTransactionRaw(t.Context(), nil, func(*Engine, *sql.Tx) error {
+		return testErr
+	})
+	if err != testErr {
+		t.Fatalf("expected %v, got %v", testErr, err)
+	}
+}
+
+func TestEngineWithTransactionRawRejectsNested(t *testing.T) {
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+	engine := NewEngine(db)
+
+	err := engine.WithTransactionRaw(t.Context(), nil, func(txEngine *Engine, rawTx *sql.Tx) error {
+		return txEngine.WithTransactionRaw(t.Context(), nil, func(*Engine, *sql.Tx) error {
+			t.Fatal("nested callback should not be called")
+			return nil
+		})
+	})
+	if err == nil {
+		t.Fatal("expected nested transaction error")
+	}
 }
 
 func TestEngineNonContextMethodsExist(t *testing.T) {

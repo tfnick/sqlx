@@ -1,6 +1,7 @@
 package sqlx
 
 import (
+	"database/sql"
 	"errors"
 	"sync"
 )
@@ -84,6 +85,40 @@ func (m *Manager) MustAdd(name string, db *DB) {
 	if err := m.Add(name, db); err != nil {
 		panic(err)
 	}
+}
+
+// GetDB returns the database registered under name.
+// If name is empty, "app" is used.
+func (m *Manager) GetDB(name string) (*DB, error) {
+	name = resolveName(name)
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	db, ok := m.databases[name]
+	if !ok {
+		return nil, errors.New("sqlx: database \"" + name + "\" is not registered")
+	}
+	return db, nil
+}
+
+// MustDB is like GetDB but panics if the database is not registered.
+func (m *Manager) MustDB(name string) *DB {
+	db, err := m.GetDB(name)
+	if err != nil {
+		panic(err)
+	}
+	return db
+}
+
+// StdDB returns the standard library *sql.DB registered under name.
+// If name is empty, "app" is used.
+func (m *Manager) StdDB(name string) (*sql.DB, error) {
+	db, err := m.GetDB(name)
+	if err != nil {
+		return nil, err
+	}
+	return db.StdDB(), nil
 }
 
 // GetEngine returns the Engine for the database registered under name.

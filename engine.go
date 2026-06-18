@@ -59,6 +59,15 @@ func (e *Engine) DB() *DB {
 	return e.db
 }
 
+// StdDB returns the underlying standard library *sql.DB.
+// It returns nil for transaction-bound Engines.
+func (e *Engine) StdDB() *sql.DB {
+	if e.db == nil {
+		return nil
+	}
+	return e.db.StdDB()
+}
+
 func (e *Engine) driverName() string {
 	if e.tx != nil {
 		return e.tx.DriverName()
@@ -471,6 +480,31 @@ func (e *Engine) WithTransactionContext(ctx context.Context, opts *sql.TxOptions
 		}
 	}()
 	err = fn(newTxEngine(tx))
+	return
+}
+
+// WithTransactionRaw executes fn within a transaction-bound Engine and also
+// passes the underlying standard library *sql.Tx for integration with
+// libraries that require it.
+func (e *Engine) WithTransactionRaw(ctx context.Context, opts *sql.TxOptions, fn func(*Engine, *sql.Tx) error) (err error) {
+	if e.tx != nil {
+		return errors.New("sqlx: nested Engine transactions are not supported")
+	}
+	tx, err := e.db.BeginTxx(ctx, opts)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p)
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			err = tx.Commit()
+		}
+	}()
+	err = fn(newTxEngine(tx), tx.StdTx())
 	return
 }
 

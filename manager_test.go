@@ -70,6 +70,75 @@ func TestManagerAddAndGetEngine(t *testing.T) {
 	}
 }
 
+func TestManagerGetDB(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	if err := mgr.Add("test", db); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	got, err := mgr.GetDB("test")
+	if err != nil {
+		t.Fatalf("GetDB failed: %v", err)
+	}
+	if got != db {
+		t.Fatal("GetDB returned wrong database")
+	}
+}
+
+func TestManagerGetDBEmptyNameDefaultsToApp(t *testing.T) {
+	mgr := NewManager()
+	db := NewDb(newFakeDB(), "sqlite3")
+	defer db.Close()
+
+	mgr.MustAdd("app", db)
+
+	got, err := mgr.GetDB("")
+	if err != nil {
+		t.Fatalf("GetDB(\"\") failed: %v", err)
+	}
+	if got != db {
+		t.Fatal("GetDB(\"\") returned wrong database")
+	}
+}
+
+func TestManagerGetDBMissing(t *testing.T) {
+	mgr := NewManager()
+	_, err := mgr.GetDB("missing")
+	if err == nil {
+		t.Fatal("expected error for missing database")
+	}
+}
+
+func TestManagerMustDBPanic(t *testing.T) {
+	mgr := NewManager()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("MustDB should panic for missing database")
+		}
+	}()
+	mgr.MustDB("missing")
+}
+
+func TestManagerStdDB(t *testing.T) {
+	mgr := NewManager()
+	raw := newFakeDB()
+	db := NewDb(raw, "sqlite3")
+	defer db.Close()
+
+	mgr.MustAdd("app", db)
+
+	got, err := mgr.StdDB("")
+	if err != nil {
+		t.Fatalf("StdDB failed: %v", err)
+	}
+	if got != raw {
+		t.Fatal("StdDB returned wrong standard database")
+	}
+}
+
 func TestManagerDefaultName(t *testing.T) {
 	mgr := NewManager()
 	db := NewDb(newFakeDB(), "sqlite3")

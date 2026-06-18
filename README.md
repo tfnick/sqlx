@@ -590,6 +590,70 @@ func (s *AccountService) ActivateUsers(ids []int64) error {
 }
 ```
 
+## Integrating Message Queues
+
+Some libraries need the standard `database/sql` handles rather than sqlx
+wrappers.  For example, `maragu.dev/goqite` creates a persistent queue from a
+`*sql.DB` and can enqueue messages inside an existing `*sql.Tx`.
+
+Use `StdDB` when wiring the queue:
+
+```go
+package app
+
+import (
+    "github.com/tfnick/sqlx"
+
+    "maragu.dev/goqite"
+)
+
+func NewJobQueue(db *sqlx.Manager) (*goqite.Queue, error) {
+    app, err := db.GetEngine("app")
+    if err != nil {
+        return nil, err
+    }
+
+    return goqite.New(goqite.NewOpts{
+        DB:   app.StdDB(),
+        Name: "jobs",
+    }), nil
+}
+```
+
+For SQLite applications using `github.com/mattn/go-sqlite3`, use the `sqlite3`
+driver name and a DSN configured for queue contention, for example:
+
+```go
+if err := db.Open("app", "sqlite3", "file:app.db?_journal=WAL&_timeout=5000&_fk=true"); err != nil {
+    return nil, err
+}
+```
+
+Install goqite's schema in the same database, or use a separate named database
+when queue isolation is more important than sharing a transaction.
+
+When a domain write and job enqueue must commit atomically, use
+`WithTransactionRaw`.  Repository code still receives a transaction-bound
+`*sqlx.Engine`, while goqite receives the standard `*sql.Tx` it requires:
+
+```go
+func (s *OrderService) CreateOrder(ctx context.Context, order Order, body []byte) error {
+    return s.app.WithTransactionRaw(ctx, nil, func(tx *sqlx.Engine, rawTx *sql.Tx) error {
+        if _, err := tx.Insert("orders", order,
+            sqlx.Columns("customer_id", "status", "total"),
+        ); err != nil {
+            return err
+        }
+
+        return s.jobs.SendTx(ctx, rawTx, goqite.Message{
+            Body: body,
+        })
+    })
+}
+```
+
+Use `goqite.SQLFlavorPostgreSQL` when the underlying database is PostgreSQL.
+
 ## Multiple Databases
 
 Pick the database when creating repositories.  Repository methods should not
