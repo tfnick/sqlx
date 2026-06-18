@@ -1,0 +1,32 @@
+{
+  "id": "portable-crud-dynamic-sql-standard",
+  "name": "portable-crud-dynamic-sql-standard",
+  "title": "Design unified Engine API for portable SQL, CRUD calls, and transactions",
+  "description": "Design a unified Engine-first sqlx API layer for multi-database access, dynamic parameters, simple CRUD-style calls through Engine methods, transaction-friendly execution, ergonomic calls, and predictable performance, targeting low-friction migration from SQLite to PostgreSQL when SQL dialect differences are out of scope.",
+  "status": "completed",
+  "dev_type": "design",
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "mac",
+  "assignee": "mac",
+  "createdAt": "2026-06-18",
+  "completedAt": "2026-06-18",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "bind.go",
+    "engine.go",
+    "named.go",
+    "sqlx.go",
+    "usecase.md"
+  ],
+  "notes": "Focus on db.GetEngine(name) as the single client-facing entrypoint, with all client calls continuing through engine methods such as ExecP, GetNamed, Select, ExecNamed, and WithTransaction. Avoid a Table/Model CRUD DSL. SQL dialect translation is explicitly out of scope.",
+  "meta": {}
+}
