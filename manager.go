@@ -5,27 +5,11 @@ import (
 	"sync"
 )
 
-// Manager manages multiple named database connections.
-//
-// Example:
-//
-//	mg := sqlx.NewManager()
-//	mg.MustOpen("app", "sqlite3", "app.db")
-//	mg.MustOpen("logs", "sqlite3", "logs.db")
-//	defer mg.Close()
-//
-//	// Get the *DB handle and use it directly
-//	db := mg.MustDB("app")
-//	db.Select(&users, "SELECT * FROM users")
-//
-//	logDB := mg.MustDB("logs")
-//	logDB.Exec("INSERT INTO access_logs ...")
-//
-//	// Get Engine for dynamic SQL from the DB
-//	engine := db.LazyEngine()
-//	engine.Select(&users, "SELECT * FROM users WHERE 1=1 #[ AND status=:status ]", params)
+// Manager manages multiple named database connections and exposes them through
+// cached Engine instances.
 type Manager struct {
 	databases map[string]*DB
+	engines   map[string]*Engine
 	mu        sync.RWMutex
 }
 
@@ -33,6 +17,7 @@ type Manager struct {
 func NewManager() *Manager {
 	return &Manager{
 		databases: make(map[string]*DB),
+		engines:   make(map[string]*Engine),
 	}
 }
 
@@ -66,6 +51,7 @@ func (m *Manager) Open(name, driverName, dataSourceName string) error {
 	}
 
 	m.databases[name] = db
+	delete(m.engines, name)
 	return nil
 }
 
@@ -89,6 +75,7 @@ func (m *Manager) Add(name string, db *DB) error {
 	}
 
 	m.databases[name] = db
+	delete(m.engines, name)
 	return nil
 }
 
@@ -99,29 +86,50 @@ func (m *Manager) MustAdd(name string, db *DB) {
 	}
 }
 
-// DB returns the database registered under the given name.
-// If name is empty, "app" is used.
-// Returns an error if the database is not registered.
-func (m *Manager) DB(name string) (*DB, error) {
+// GetEngine returns the Engine for the database registered under name.
+// If name is empty, "app" is used. Engines are cached per database name.
+func (m *Manager) GetEngine(name string) (*Engine, error) {
 	name = resolveName(name)
 
 	m.mu.RLock()
+	if engine, ok := m.engines[name]; ok {
+		m.mu.RUnlock()
+		return engine, nil
+	}
 	db, ok := m.databases[name]
 	m.mu.RUnlock()
 
 	if !ok {
 		return nil, errors.New("sqlx: database \"" + name + "\" is not registered")
 	}
-	return db, nil
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if engine, ok := m.engines[name]; ok {
+		return engine, nil
+	}
+	engine := NewEngine(db)
+	m.engines[name] = engine
+	return engine, nil
 }
 
-// MustDB is like DB but panics if the database is not registered.
-func (m *Manager) MustDB(name string) *DB {
-	db, err := m.DB(name)
+// MustEngine is like GetEngine but panics if the database is not registered.
+func (m *Manager) MustEngine(name string) *Engine {
+	engine, err := m.GetEngine(name)
 	if err != nil {
 		panic(err)
 	}
-	return db
+	return engine
+}
+
+// Engine is a short panic-on-missing alias for MustEngine.
+func (m *Manager) Engine(name string) *Engine {
+	return m.MustEngine(name)
+}
+
+// DefaultEngine returns the Engine for the default database.
+func (m *Manager) DefaultEngine() *Engine {
+	return m.MustEngine("")
 }
 
 // Close closes all registered databases and clears the registry.
@@ -135,7 +143,7 @@ func (m *Manager) Close() error {
 			lastErr = err
 		}
 		delete(m.databases, name)
+		delete(m.engines, name)
 	}
 	return lastErr
 }
-

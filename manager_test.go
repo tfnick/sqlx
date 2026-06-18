@@ -19,9 +19,9 @@ func (d fakeDriver) Open(string) (driver.Conn, error) { return &fakeConn{}, nil 
 
 type fakeConn struct{}
 
-func (c fakeConn) Prepare(string) (driver.Stmt, error)     { return nil, nil }
-func (c fakeConn) Close() error                            { return nil }
-func (c fakeConn) Begin() (driver.Tx, error)               { return &fakeTx{}, nil }
+func (c fakeConn) Prepare(string) (driver.Stmt, error) { return nil, nil }
+func (c fakeConn) Close() error                        { return nil }
+func (c fakeConn) Begin() (driver.Tx, error)           { return &fakeTx{}, nil }
 func (c fakeConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
 	return nil, nil
 }
@@ -31,7 +31,7 @@ func (c fakeConn) ExecContext(context.Context, string, []driver.NamedValue) (dri
 
 // fakeTx implements driver.Tx for testing WithTransaction.
 type fakeTx struct {
-	committed bool
+	committed  bool
 	rolledBack bool
 }
 
@@ -52,7 +52,7 @@ func TestNewManager(t *testing.T) {
 	}
 }
 
-func TestManagerAddAndGet(t *testing.T) {
+func TestManagerAddAndGetEngine(t *testing.T) {
 	mgr := NewManager()
 	db := NewDb(newFakeDB(), "sqlite3")
 	defer db.Close()
@@ -61,12 +61,12 @@ func TestManagerAddAndGet(t *testing.T) {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	got, err := mgr.DB("test")
+	got, err := mgr.GetEngine("test")
 	if err != nil {
-		t.Fatalf("Get failed: %v", err)
+		t.Fatalf("GetEngine failed: %v", err)
 	}
-	if got != db {
-		t.Fatal("Get returned wrong database")
+	if got.DB() != db {
+		t.Fatal("GetEngine returned Engine for wrong database")
 	}
 }
 
@@ -79,12 +79,12 @@ func TestManagerDefaultName(t *testing.T) {
 		t.Fatalf("Add failed: %v", err)
 	}
 
-	got, err := mgr.DB("")
+	got, err := mgr.GetEngine("")
 	if err != nil {
-		t.Fatalf("Get with empty name failed: %v", err)
+		t.Fatalf("GetEngine with empty name failed: %v", err)
 	}
-	if got != db {
-		t.Fatal("Get(\"\") should return the \"app\" database")
+	if got.DB() != db {
+		t.Fatal("GetEngine(\"\") should return the \"app\" database Engine")
 	}
 }
 
@@ -107,20 +107,20 @@ func TestManagerDuplicateName(t *testing.T) {
 
 func TestManagerGetMissing(t *testing.T) {
 	mgr := NewManager()
-	_, err := mgr.DB("nonexistent")
+	_, err := mgr.GetEngine("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for missing database")
 	}
 }
 
-func TestManagerMustGetPanic(t *testing.T) {
+func TestManagerMustEnginePanic(t *testing.T) {
 	mgr := NewManager()
 	defer func() {
 		if r := recover(); r == nil {
-			t.Fatal("MustGet should panic for missing database")
+			t.Fatal("MustEngine should panic for missing database")
 		}
 	}()
-	mgr.MustDB("nonexistent")
+	mgr.MustEngine("nonexistent")
 }
 
 func TestManagerMustAdd(t *testing.T) {
@@ -129,9 +129,9 @@ func TestManagerMustAdd(t *testing.T) {
 	defer db.Close()
 
 	mgr.MustAdd("app", db)
-	got := mgr.MustDB("app")
-	if got != db {
-		t.Fatal("MustGet returned wrong database")
+	got := mgr.MustEngine("app")
+	if got.DB() != db {
+		t.Fatal("MustEngine returned Engine for wrong database")
 	}
 }
 
@@ -161,22 +161,6 @@ func TestManagerClose(t *testing.T) {
 
 	if len(mgr.databases) != 0 {
 		t.Fatal("Close should clear all databases")
-	}
-}
-
-func TestDBLazyEngine(t *testing.T) {
-	db := NewDb(newFakeDB(), "sqlite3")
-	defer db.Close()
-
-	engine := db.LazyEngine()
-	if engine == nil {
-		t.Fatal("LazyEngine returned nil")
-	}
-
-	// Second call should return the same instance
-	engine2 := db.LazyEngine()
-	if engine != engine2 {
-		t.Fatal("LazyEngine should return the same Engine instance")
 	}
 }
 
@@ -254,14 +238,14 @@ func TestManagerMultipleDatabases(t *testing.T) {
 	mgr.MustAdd("logs", db2)
 	mgr.MustAdd("cache", db3)
 
-	if mgr.MustDB("app") != db1 {
-		t.Fatal("wrong db for 'app'")
+	if mgr.MustEngine("app").DB() != db1 {
+		t.Fatal("wrong engine for 'app'")
 	}
-	if mgr.MustDB("logs") != db2 {
-		t.Fatal("wrong db for 'logs'")
+	if mgr.MustEngine("logs").DB() != db2 {
+		t.Fatal("wrong engine for 'logs'")
 	}
-	if mgr.MustDB("cache") != db3 {
-		t.Fatal("wrong db for 'cache'")
+	if mgr.MustEngine("cache").DB() != db3 {
+		t.Fatal("wrong engine for 'cache'")
 	}
 }
 
@@ -287,35 +271,7 @@ func TestManagerCloseEmpty(t *testing.T) {
 	}
 }
 
-func TestDBLazyEngineAfterUnsafe(t *testing.T) {
-	db := NewDb(newFakeDB(), "sqlite3")
-	defer db.Close()
-
-	eng1 := db.LazyEngine()
-	eng2 := db.Unsafe().LazyEngine()
-
-	if eng1 == eng2 {
-		t.Fatal("Unsafe() copy should get its own engine")
-	}
-	if eng2 == nil {
-		t.Fatal("LazyEngine on Unsafe copy returned nil")
-	}
-}
-
-func TestDBLazyEngineSameInstance(t *testing.T) {
-	db := NewDb(newFakeDB(), "sqlite3")
-	defer db.Close()
-
-	eng1 := db.LazyEngine()
-	eng2 := db.LazyEngine()
-	eng3 := db.LazyEngine()
-
-	if eng1 != eng2 || eng2 != eng3 {
-		t.Fatal("multiple LazyEngine calls should return the same instance")
-	}
-}
-
-func TestManagerGetEmptyNameDefaultsToApp(t *testing.T) {
+func TestManagerGetEngineEmptyNameDefaultsToApp(t *testing.T) {
 	mgr := NewManager()
 	db := NewDb(newFakeDB(), "sqlite3")
 	defer db.Close()
@@ -323,12 +279,12 @@ func TestManagerGetEmptyNameDefaultsToApp(t *testing.T) {
 	mgr.MustAdd("app", db)
 
 	// All empty-string variants should resolve to "app"
-	got, err := mgr.DB("")
+	got, err := mgr.GetEngine("")
 	if err != nil {
-		t.Fatalf("Get(\"\") failed: %v", err)
+		t.Fatalf("GetEngine(\"\") failed: %v", err)
 	}
-	if got != db {
-		t.Fatal("Get(\"\") returned wrong db")
+	if got.DB() != db {
+		t.Fatal("GetEngine(\"\") returned wrong engine")
 	}
 }
 
@@ -338,9 +294,8 @@ func TestManagerGetMissingAfterClose(t *testing.T) {
 	mgr.MustAdd("app", db)
 	mgr.Close()
 
-	_, err := mgr.DB("app")
+	_, err := mgr.GetEngine("app")
 	if err == nil {
 		t.Fatal("expected error for database after Close")
 	}
 }
-

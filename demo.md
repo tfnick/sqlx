@@ -2,7 +2,7 @@
 
 本文从客户端应用的视角展示一套新的可迁移 sqlx 调用方式。目标是在不考虑 SQL 方言差异的前提下，让应用先使用 SQLite，后续切换到 PostgreSQL 时尽量不修改业务 SQL。
 
-说明：本文中的 `GetEngine`、`ExecP`、`GetP`、`SelectP`、`ExecNamed`、`GetNamed`、`SelectNamed`、`Select`、`Exec`、`WithTransaction` 等 API 是新标准方案的设计示例，代表期望的客户端调用体验。
+说明：本文中的 `GetEngine`、`DefaultEngine`、`Engine`、`ExecP`、`GetP`、`SelectP`、`ExecNamed`、`GetNamed`、`SelectNamed`、`Select`、`Exec`、`Insert`、`InsertMany`、`Save`、`SaveMany`、`PrepareInsert`、`PrepareSave`、`WithTransaction` 等 API 是新标准方案的设计示例，代表期望的客户端调用体验。
 
 ## 核心心智模型
 
@@ -15,16 +15,13 @@ if err != nil {
 }
 ```
 
-单库应用也使用同一个入口，默认库名可以约定为 `"app"`。
+单库应用可以直接使用默认 Engine，默认库名约定为 `"app"`。
 
 ```go
-app, err := db.GetEngine("app")
-if err != nil {
-    return err
-}
+app := db.DefaultEngine()
 ```
 
-多库应用只是库名不同。
+多库应用显式指定库名。
 
 ```go
 app, err := db.GetEngine("app")
@@ -333,133 +330,153 @@ func (r *UserRepo) Page(q UserQuery) ([]User, int, error) {
 }
 ```
 
-## 简单增删改查
+## Engine CRUD API
 
-标准单表操作仍然使用 Engine 方法，不引入额外的表模型链式封装。创建记录时，参数多且字段含义明确，推荐使用 `ExecNamed`。
+标准单表操作由 sqlx 的 Engine 提供统一 API。上层应用不需要为每个仓储对象重复拼接 `INSERT`、`UPDATE`、`DELETE`、批量新增或批量保存 SQL；它只声明表名、字段、主键或冲突键，Engine 根据当前数据库驱动生成可执行 SQL。
+
+这不是 `Table(...).Model(...)` 链式 ORM。它是 Engine 上的一组显式方法，目标是覆盖简单单表写入和读取，让上层应用在 SQLite 和 PostgreSQL 之间切换时尽量不改调用代码。
 
 ```go
-func (r *UserRepo) Create(user User) error {
-    _, err := r.e.ExecNamed(`
-        INSERT INTO users (name, email, age, status)
-        VALUES (:name, :email, :age, :status)
-    `, user)
+_, err := app.Insert("users", user,
+    sqlx.Columns("name", "email", "age", "status"),
+)
+```
+
+需要返回自增 ID 时，由 Engine 根据驱动选择合适策略。SQLite 可以读取 `LastInsertId`，PostgreSQL 可以生成 `RETURNING id`。
+
+```go
+var id int64
+err := app.InsertReturning(&id, "users", user,
+    sqlx.Columns("name", "email", "age", "status"),
+    sqlx.Returning("id"),
+)
+```
+
+更新时显式声明匹配键和更新列，避免零值字段被意外写入。
+
+```go
+_, err := app.Update("users", user,
+    sqlx.Keys("id"),
+    sqlx.Columns("name", "email", "age"),
+)
+```
+
+删除记录和按键读取也从 Engine 调用。
+
+```go
+_, err := app.Delete("users", sqlx.Where("id", id))
+```
+
+```go
+var user User
+err := app.GetBy(&user, "users",
+    sqlx.Where("id", id),
+    sqlx.Where("status", "active"),
+    sqlx.Columns("id", "name", "email", "age", "status", "created_at", "updated_at"),
+)
+```
+
+列表查询仍然可以使用动态 SQL；如果只是简单条件，也可以使用 Engine 的单表选择方法。
+
+```go
+var users []User
+err := app.SelectBy(&users, "users",
+    sqlx.Where("status", "active"),
+    sqlx.Columns("id", "name", "email", "age", "status", "created_at"),
+    sqlx.OrderDesc("id"),
+    sqlx.LimitOffset(limit, offset),
+)
+```
+
+## 批量新增
+
+批量新增是 sqlx 层能力，而不是上层 repository 自己循环调用。调用方传入结构体切片，Engine 负责生成批量 `INSERT`、绑定字段、转换占位符，并缓存字段映射和 SQL 模板。
+
+```go
+_, err := app.InsertMany("users", users,
+    sqlx.Columns("name", "email", "age", "status"),
+)
+```
+
+如果需要返回批量新增后的主键，使用返回值版本。不同数据库返回能力不同；不支持批量返回的驱动应返回清晰错误，而不是静默降级成不完整结果。
+
+```go
+var ids []int64
+err := app.InsertManyReturning(&ids, "users", users,
+    sqlx.Columns("name", "email", "age", "status"),
+    sqlx.Returning("id"),
+)
+```
+
+批量新增可以在普通 Engine 或事务 Engine 上使用，调用形态保持一致。
+
+```go
+err := app.WithTransaction(func(tx *sqlx.Engine) error {
+    _, err := tx.InsertMany("users", users,
+        sqlx.Columns("name", "email", "age", "status"),
+    )
+    return err
+})
+```
+
+## 批量保存
+
+保存表示 upsert：按唯一键或主键匹配，存在则更新，不存在则新增。这个能力应由 sqlx 的 Engine 统一提供，而不是让上层应用在 repository 中分别写 SQLite、PostgreSQL 的 `ON CONFLICT` SQL。
+
+```go
+_, err := app.Save("users", user,
+    sqlx.ConflictKeys("email"),
+    sqlx.InsertColumns("name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "age", "status"),
+)
+```
+
+批量保存同样直接调用 Engine。Engine 根据驱动生成方言 SQL：SQLite 和 PostgreSQL 可以使用 `ON CONFLICT (...) DO UPDATE`；其他驱动如果没有实现对应方言，应返回 `ErrUnsupportedDialect`。
+
+```go
+_, err := app.SaveMany("users", users,
+    sqlx.ConflictKeys("email"),
+    sqlx.InsertColumns("name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "age", "status"),
+)
+```
+
+如果保存依据是主键，也只需要把冲突键换成主键。
+
+```go
+_, err := app.SaveMany("users", users,
+    sqlx.ConflictKeys("id"),
+    sqlx.InsertColumns("id", "name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "email", "age", "status"),
+)
+```
+
+热点路径可以准备 CRUD 语句计划。准备阶段完成表名、字段、键、方言 SQL 和字段映射缓存；执行阶段只绑定数据。
+
+```go
+insertUsers, err := app.PrepareInsert("users",
+    sqlx.Columns("name", "email", "age", "status"),
+)
+if err != nil {
     return err
 }
+defer insertUsers.Close()
+
+_, err = insertUsers.ExecMany(users)
 ```
 
-如果创建后需要返回 ID，可以使用 `GetNamed` 承接返回值。具体 SQL 是否使用返回子句属于方言问题，这里只展示调用形态。
-
 ```go
-func (r *UserRepo) CreateReturningID(user User) (int64, error) {
-    var id int64
-    err := r.e.GetNamed(&id, `
-        INSERT INTO users (name, email, age, status)
-        VALUES (:name, :email, :age, :status)
-        RETURNING id
-    `, user)
-    return id, err
-}
-```
-
-更新时显式写出要更新的列，避免零值字段被意外写入。
-
-```go
-func (r *UserRepo) UpdateProfile(user User) error {
-    _, err := r.e.ExecNamed(`
-        UPDATE users
-        SET name = :name, email = :email, age = :age
-        WHERE id = :id
-    `, user)
+saveUsers, err := app.PrepareSave("users",
+    sqlx.ConflictKeys("email"),
+    sqlx.InsertColumns("name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "age", "status"),
+)
+if err != nil {
     return err
 }
-```
+defer saveUsers.Close()
 
-删除记录可以使用 `ExecP`，保持简单。
-
-```go
-func (r *UserRepo) DeleteByID(id int64) error {
-    _, err := r.e.ExecP(`
-        DELETE FROM users
-        WHERE id = ?
-    `, id)
-    return err
-}
-```
-
-查询单条记录可以使用 `GetNamed`。
-
-```go
-func (r *UserRepo) GetActiveByID(id int64) (User, error) {
-    var user User
-    err := r.e.GetNamed(&user, `
-        SELECT id, name, email, age, status, created_at, updated_at
-        FROM users
-        WHERE id = :id AND status = :status
-    `, map[string]any{
-        "id":     id,
-        "status": "active",
-    })
-    return user, err
-}
-```
-
-查询多条记录可以使用 `SelectNamed`，如果存在可选条件则使用 `Select`。
-
-```go
-func (r *UserRepo) ListActive(limit int, offset int) ([]User, error) {
-    var users []User
-    err := r.e.SelectNamed(&users, `
-        SELECT id, name, email, age, status, created_at
-        FROM users
-        WHERE status = :status
-        ORDER BY id DESC
-        LIMIT :limit OFFSET :offset
-    `, map[string]any{
-        "status": "active",
-        "limit":  limit,
-        "offset": offset,
-    })
-    return users, err
-}
-```
-
-## 批量插入
-
-批量插入仍然通过 Engine 方法完成。库侧应缓存命名 SQL 的解析结果，避免每行重复解析。
-
-```go
-func (r *UserRepo) CreateMany(users []User) error {
-    _, err := r.e.ExecNamed(`
-        INSERT INTO users (name, email, age, status)
-        VALUES (:name, :email, :age, :status)
-    `, users)
-    return err
-}
-```
-
-如果批量写入是热点路径，可以提前准备命名语句。
-
-```go
-type BatchUserRepo struct {
-    createUser *sqlx.NamedStmt
-}
-
-func NewBatchUserRepo(e *sqlx.Engine) (*BatchUserRepo, error) {
-    stmt, err := e.PrepareNamed(`
-        INSERT INTO users (name, email, age, status)
-        VALUES (:name, :email, :age, :status)
-    `)
-    if err != nil {
-        return nil, err
-    }
-
-    return &BatchUserRepo{createUser: stmt}, nil
-}
-
-func (r *BatchUserRepo) CreateMany(users []User) error {
-    _, err := r.createUser.Exec(users)
-    return err
-}
+_, err = saveUsers.ExecMany(users)
 ```
 
 ## 事务
@@ -641,7 +658,7 @@ func NewTenantUserRepo(db *sqlx.Manager, tenantID string) (*UserRepo, error) {
 ```go
 type PreparedUserRepo struct {
     e          *sqlx.Engine
-    findActive *sqlx.DynamicStmt
+    findActive *sqlx.DynNamedStmt
 }
 
 func NewPreparedUserRepo(e *sqlx.Engine) (*PreparedUserRepo, error) {
@@ -672,19 +689,18 @@ func (r *PreparedUserRepo) FindActive(limit int) ([]User, error) {
 }
 ```
 
-写入热点也使用 Engine 的预编译命名语句。
+写入热点优先使用 Engine 的 CRUD 预编译计划。调用方不需要写死 `RETURNING` 或 upsert 方言，切换数据库时仍然复用同一组调用。
 
 ```go
 type FastUserRepo struct {
-    insertUser *sqlx.NamedStmt
+    insertUser *sqlx.CrudStmt
 }
 
 func NewFastUserRepo(e *sqlx.Engine) (*FastUserRepo, error) {
-    insertUser, err := e.PrepareNamed(`
-        INSERT INTO users (name, email, age, status)
-        VALUES (:name, :email, :age, :status)
-        RETURNING id
-    `)
+    insertUser, err := e.PrepareInsert("users",
+        sqlx.Columns("name", "email", "age", "status"),
+        sqlx.Returning("id"),
+    )
     if err != nil {
         return nil, err
     }
@@ -694,9 +710,16 @@ func NewFastUserRepo(e *sqlx.Engine) (*FastUserRepo, error) {
 
 func (r *FastUserRepo) Create(user User) (int64, error) {
     var id int64
-    err := r.insertUser.Get(&id, user)
+    err := r.insertUser.ExecReturning(&id, user)
     return id, err
 }
+```
+
+初始化完成后，如果希望使用 panic-on-missing 的简短写法，也可以使用 `Engine(name)`。
+
+```go
+app := db.Engine("app")
+logs := db.Engine("logs")
 ```
 
 ## 迁移切换
@@ -772,7 +795,7 @@ app, err := db.GetEngine("app")
 user, err := repo.FindByID(1001)
 ```
 
-参数较多，使用 `GetNamed`、`SelectNamed`、`ExecNamed`。
+显式 SQL 参数较多，使用 `GetNamed`、`SelectNamed`、`ExecNamed`。
 
 ```go
 err := repo.CreateByNamed(User{
@@ -793,15 +816,31 @@ users, err := repo.Search(UserQuery{
 })
 ```
 
-标准单表增删改查，直接使用 Engine 的 `ExecNamed`、`GetNamed`、`SelectNamed`、`ExecP`。
+标准单表增删改查，优先使用 Engine 的 CRUD API，让 sqlx 生成可迁移 SQL。
 
 ```go
-err := repo.Create(User{
+_, err := app.Insert("users", User{
     Name:   "Tom",
     Email:  "tom@example.com",
     Age:    20,
     Status: "active",
-})
+}, sqlx.Columns("name", "email", "age", "status"))
+```
+
+批量新增和批量保存也从 Engine 调用，而不是在上层仓储里循环拼 SQL。
+
+```go
+_, err := app.InsertMany("users", users,
+    sqlx.Columns("name", "email", "age", "status"),
+)
+```
+
+```go
+_, err := app.SaveMany("users", users,
+    sqlx.ConflictKeys("email"),
+    sqlx.InsertColumns("name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "age", "status"),
+)
 ```
 
 多步写入需要原子性，使用 Engine 的事务 API。
@@ -810,10 +849,20 @@ err := repo.Create(User{
 err := service.Transfer(1, 2, 100)
 ```
 
-热点路径或批量循环，使用 Engine 的预编译 API。
+热点路径或批量循环，使用 Engine 的 CRUD 预编译 API。
 
 ```go
-users, err := preparedRepo.FindActive(100)
+stmt, err := app.PrepareSave("users",
+    sqlx.ConflictKeys("email"),
+    sqlx.InsertColumns("name", "email", "age", "status"),
+    sqlx.UpdateColumns("name", "age", "status"),
+)
+if err != nil {
+    return err
+}
+defer stmt.Close()
+
+_, err = stmt.ExecMany(users)
 ```
 
 ## 不推荐的调用方式

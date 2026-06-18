@@ -1,11 +1,10 @@
-// Package sqlx provides general purpose extensions to database/sql.
+// Package sqlx provides an Engine-first SQL API on top of database/sql.
 //
-// It is intended to seamlessly wrap database/sql and provide convenience
-// methods which are useful in the development of database driven applications.
-// None of the underlying database/sql methods are changed.  Instead all extended
-// behavior is implemented through new methods defined on wrapper types.
+// New application code should create a Manager, get an Engine with GetEngine,
+// MustEngine, Engine, or DefaultEngine, and call query, dynamic SQL, CRUD,
+// batch, prepared, and transaction methods from that Engine.
 //
-// Additions include scanning into structs, named query support, rebinding
-// queries for different drivers, convenient shorthands for common error handling
-// and more.
+// The lower-level database/sql wrapper types remain available to support the
+// Engine implementation and migration of existing code, but they are not the
+// standard client-facing API.
 package sqlx

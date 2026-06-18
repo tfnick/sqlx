@@ -411,6 +411,15 @@ func TestPreprocessINWithNilSlice(t *testing.T) {
 	}
 }
 
+func TestNormalizeInNamedParams(t *testing.T) {
+	query := "SELECT * FROM users WHERE id IN :ids AND status in :statuses"
+	got := normalizeInNamedParams(query)
+	want := "SELECT * FROM users WHERE id IN (:ids) AND status IN (:statuses)"
+	if got != want {
+		t.Fatalf("normalizeInNamedParams() = %q, want %q", got, want)
+	}
+}
+
 // TestPreprocessMultipleINClause tests multiple IN clauses with different slice states
 func TestPreprocessMultipleINClause(t *testing.T) {
 	query := `SELECT * FROM user WHERE 1=1
@@ -419,27 +428,27 @@ func TestPreprocessMultipleINClause(t *testing.T) {
 #[ AND status IN :statuses ]`
 
 	tests := []struct {
-		name              string
-		params            map[string]interface{}
-		shouldContain     []string
-		shouldNotContain  []string
+		name             string
+		params           map[string]interface{}
+		shouldContain    []string
+		shouldNotContain []string
 	}{
 		{
-			name:           "all slices empty - all conditions removed",
-			params:         map[string]interface{}{"ids": []int{}, "ages": []int{}, "statuses": []string{}},
-			shouldContain:  []string{"WHERE 1=1"},
+			name:             "all slices empty - all conditions removed",
+			params:           map[string]interface{}{"ids": []int{}, "ages": []int{}, "statuses": []string{}},
+			shouldContain:    []string{"WHERE 1=1"},
 			shouldNotContain: []string{"id IN", "age IN", "status IN"},
 		},
 		{
-			name:           "mixed slices",
-			params:         map[string]interface{}{"ids": []int{1, 2}, "ages": []int{}, "statuses": []string{"active"}},
-			shouldContain:  []string{"id IN :ids", "status IN :statuses"},
+			name:             "mixed slices",
+			params:           map[string]interface{}{"ids": []int{1, 2}, "ages": []int{}, "statuses": []string{"active"}},
+			shouldContain:    []string{"id IN :ids", "status IN :statuses"},
 			shouldNotContain: []string{"age IN"},
 		},
 		{
-			name:           "nil slices - conditions removed",
-			params:         map[string]interface{}{"ids": nil, "ages": nil, "statuses": nil},
-			shouldContain:  []string{"WHERE 1=1"},
+			name:             "nil slices - conditions removed",
+			params:           map[string]interface{}{"ids": nil, "ages": nil, "statuses": nil},
+			shouldContain:    []string{"WHERE 1=1"},
 			shouldNotContain: []string{"id IN", "age IN", "status IN"},
 		},
 	}
@@ -634,23 +643,12 @@ func TestEngineMustExecPanicsOnError(t *testing.T) {
 	// MustExec with named params compiles correctly
 	var result sql.Result
 	var called bool
-	_ = func() { result = engine.MustExec("INSERT INTO users (name) VALUES (:name)", map[string]interface{}{"name": "test"}); called = true }
+	_ = func() {
+		result = engine.MustExec("INSERT INTO users (name) VALUES (:name)", map[string]interface{}{"name": "test"})
+		called = true
+	}
 	_ = result
 	_ = called
-}
-
-func TestEngineLazyEngine(t *testing.T) {
-	db := NewDb(newFakeDB(), "sqlite3")
-	defer db.Close()
-
-	eng1 := db.LazyEngine()
-	if eng1 == nil {
-		t.Fatal("LazyEngine returned nil")
-	}
-	eng2 := db.LazyEngine()
-	if eng1 != eng2 {
-		t.Fatal("LazyEngine should return the same instance")
-	}
 }
 
 func TestEngineDynNamedStmtMethodsExist(t *testing.T) {
