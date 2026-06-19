@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tfnick/sqlx/reflectx"
 )
@@ -366,6 +367,20 @@ func (db *DB) Queryx(query string, args ...interface{}) (*Rows, error) {
 func (db *DB) QueryRowx(query string, args ...interface{}) *Row {
 	rows, err := db.DB.Query(query, args...)
 	return &Row{rows: rows, err: err, unsafe: db.unsafe, Mapper: db.Mapper}
+}
+
+// Exec executes a query and returns the result. This method shadows the
+// embedded *sql.DB.Exec so that SQL logging can capture the call.
+func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	start := time.Now()
+	res, err := db.DB.Exec(query, args...)
+	if err != nil {
+		Log.logExec(query, args, time.Since(start), 0, err)
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	Log.logExec(query, args, time.Since(start), affected, nil)
+	return res, nil
 }
 
 // MustExec (panic) runs MustExec using this database.

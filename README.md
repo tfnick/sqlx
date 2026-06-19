@@ -784,6 +784,51 @@ Use this quick guide when choosing an API:
 | Hot write loop | `PrepareInsert`, `PrepareSave` |
 | Atomic multi-step write | `WithTransaction`, `WithTransactionContext` |
 
+## SQL Logging
+
+sqlx logs every SQL statement to `os.Stdout` by default. The output includes the
+query string, arguments, execution duration, and affected rows (for write
+operations).
+
+```text
+[sqlx][3.2ms] SELECT * FROM users WHERE id=? [1]
+[sqlx][1.5ms] INSERT INTO users (name) VALUES (?) [张三] affected:1
+[sqlx][0.8ms] UPDATE users SET name=? WHERE id=? [李四 3] affected:1
+```
+
+### Quick Control
+
+```go
+// Disable all SQL logging
+sqlx.Log.Enabled = false
+
+// Enable again
+sqlx.Log.Enabled = true
+```
+
+### Redirect Output
+
+The `Output` field accepts any `io.Writer`. Change it to send SQL logs
+to a file, a log framework, or any custom writer.
+
+```go
+// Write SQL logs to a file
+f, _ := os.OpenFile("sql.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+sqlx.Log.Output = f
+
+// Integrate with logrus
+sqlx.Log.Output = logrus.StandardLogger().Writer()
+
+// Integrate with zap (via zapio or a custom writer)
+sqlx.Log.Output = &zapWriter{logger: logger}
+
+// Send to multiple writers via io.MultiWriter
+sqlx.Log.Output = io.MultiWriter(os.Stdout, logFile)
+```
+
+No driver-specific configuration or import is required. The global `Log` works
+for every database managed by `*Manager`.
+
 ## Not Recommended
 
 Do not bypass Engine in application code:
