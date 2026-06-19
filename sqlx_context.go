@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"reflect"
+	"time"
 )
 
 // ConnectContext to a database and verify with a ping.
@@ -156,20 +157,43 @@ func (db *DB) PreparexContext(ctx context.Context, query string) (*Stmt, error) 
 	return PreparexContext(ctx, db, query)
 }
 
+// ExecContext executes a query and returns the result. This method shadows the
+// embedded *sql.DB.ExecContext so that SQL logging can capture the call.
+func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	start := time.Now()
+	res, err := db.DB.ExecContext(ctx, query, args...)
+	if err != nil {
+		Log.logExec(query, args, time.Since(start), 0, err)
+		return nil, err
+	}
+	affected, _ := res.RowsAffected()
+	Log.logExec(query, args, time.Since(start), affected, nil)
+	return res, nil
+}
+
 // QueryxContext queries the database and returns an *sqlx.Rows.
 // Any placeholder parameters are replaced with supplied args.
 func (db *DB) QueryxContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+	start := time.Now()
 	r, err := db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
+		Log.logQuery(query, args, time.Since(start), err)
 		return nil, err
 	}
+	Log.logQuery(query, args, time.Since(start), nil)
 	return &Rows{Rows: r, unsafe: db.unsafe, Mapper: db.Mapper}, err
 }
 
 // QueryRowxContext queries the database and returns an *sqlx.Row.
 // Any placeholder parameters are replaced with supplied args.
 func (db *DB) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *Row {
+	start := time.Now()
 	rows, err := db.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		Log.logQuery(query, args, time.Since(start), err)
+	} else {
+		Log.logQuery(query, args, time.Since(start), nil)
+	}
 	return &Row{rows: rows, err: err, unsafe: db.unsafe, Mapper: db.Mapper}
 }
 
